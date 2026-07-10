@@ -1,0 +1,2463 @@
+import io
+import re
+import unicodedata
+from datetime import date, datetime
+
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+
+
+# ============================================================
+# CONFIGURACIÓN GENERAL
+# ============================================================
+
+st.set_page_config(
+    page_title="Perfil Integral de Aspirantes",
+    page_icon="🎓",
+    layout="wide"
+)
+
+
+# ============================================================
+# NAVEGACIÓN LATERAL
+# ============================================================
+
+st.sidebar.title("🎓 Panel de navegación")
+
+modulo_activo = st.sidebar.radio(
+    "Selecciona un módulo",
+    [
+        "📘 EVALUATEC 2026",
+        "🎓 Historial de Aspirantes",
+        "👤 Perfil individual"
+    ]
+)
+
+
+# ============================================================
+# UTILIDADES GENERALES COMPARTIDAS
+# ============================================================
+
+def util_normalizar_texto(valor):
+    if pd.isna(valor):
+        return ""
+
+    texto = str(valor).strip().lower()
+    texto = unicodedata.normalize("NFD", texto)
+
+    texto = "".join(
+        caracter
+        for caracter in texto
+        if unicodedata.category(caracter) != "Mn"
+    )
+
+    return " ".join(texto.split())
+
+
+def util_limpiar_texto(valor):
+    if pd.isna(valor):
+        return ""
+
+    texto = str(valor).strip().lower()
+    texto = unicodedata.normalize("NFD", texto)
+
+    texto = "".join(
+        caracter
+        for caracter in texto
+        if unicodedata.category(caracter) != "Mn"
+    )
+
+    return re.sub(r"\s+", " ", texto)
+
+
+def util_limpiar_texto_visible(valor):
+    if pd.isna(valor):
+        return ""
+
+    texto = str(valor).replace("\n", " ")
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def util_encontrar_columna(df, posibles_nombres):
+    columnas_normalizadas = {
+        util_limpiar_texto(columna): columna
+        for columna in df.columns
+    }
+
+    for posible in posibles_nombres:
+        posible_limpio = util_limpiar_texto(posible)
+
+        if posible_limpio in columnas_normalizadas:
+            return columnas_normalizadas[posible_limpio]
+
+        for columna_limpia, columna_original in columnas_normalizadas.items():
+            if posible_limpio in columna_limpia:
+                return columna_original
+
+    return None
+
+
+# ============================================================
+# ============================================================
+# MÓDULO 1: EVALUATEC 2026
+# ============================================================
+# ============================================================
+
+EVAL_ETIQUETAS_AREAS = {
+    "ING": "Inglés",
+    "MAT": "Matemáticas",
+    "COM": "Comprensión lectora",
+    "RLM": "Razonamiento lógico-matemático",
+    "PM": "Pensamiento matemático",
+    "ARQ": "Arquitectura",
+    "FIS": "Física",
+    "ADMN": "Administración"
+}
+
+EVAL_ORDEN_AREAS = [
+    "ING",
+    "MAT",
+    "COM",
+    "RLM",
+    "PM",
+    "FIS",
+    "ARQ",
+    "ADMN"
+]
+
+EVAL_BLOQUES = {
+    "ADM": "Administración",
+    "ARQ": "Arquitectura",
+    "ING": "Ingeniería"
+}
+
+EVAL_ICONOS_BLOQUES = {
+    "ADM": "📘",
+    "ARQ": "🏛️",
+    "ING": "⚙️"
+}
+
+EVAL_ORDEN_NIVELES = [
+    "Bajo",
+    "Básico",
+    "Satisfactorio",
+    "Alto"
+]
+
+EVAL_RANGOS_NIVELES = {
+    "Bajo": "0–24%",
+    "Básico": "25–49%",
+    "Satisfactorio": "50–74%",
+    "Alto": "75–100%"
+}
+
+EVAL_COLORES_NIVELES = {
+    "Bajo": "#E74C3C",
+    "Básico": "#F39C12",
+    "Satisfactorio": "#F1C40F",
+    "Alto": "#27AE60"
+}
+
+
+def eval_limpiar_nombre_carrera(valor):
+    if pd.isna(valor):
+        return "Sin carrera especificada"
+
+    return " ".join(str(valor).strip().split())
+
+
+def eval_leer_csv_archivo(archivo):
+    contenido = archivo.getvalue()
+
+    codificaciones = [
+        "utf-8",
+        "utf-8-sig",
+        "latin-1",
+        "cp1252"
+    ]
+
+    separadores = [
+        ",",
+        ";",
+        "\t"
+    ]
+
+    for codificacion in codificaciones:
+        for separador in separadores:
+            try:
+                df = pd.read_csv(
+                    io.BytesIO(contenido),
+                    encoding=codificacion,
+                    sep=separador
+                )
+
+                if len(df.columns) > 1:
+                    return df
+
+            except Exception:
+                continue
+
+    return pd.read_csv(
+        io.BytesIO(contenido),
+        encoding="latin-1"
+    )
+
+
+def eval_identificar_bloque_archivo(nombre_archivo):
+    nombre = util_normalizar_texto(nombre_archivo)
+
+    if "administracion" in nombre:
+        return "ADM"
+
+    if "arquitectura" in nombre:
+        return "ARQ"
+
+    if "ingenieria" in nombre:
+        return "ING"
+
+    return None
+
+
+def eval_clasificar_inicio(valor):
+    if pd.isna(valor):
+        return "No inició"
+
+    texto = util_normalizar_texto(valor)
+
+    valores_no_inicio = [
+        "",
+        "no",
+        "n",
+        "false",
+        "falso",
+        "0",
+        "no inicio",
+        "no iniciado",
+        "pendiente",
+        "null",
+        "nan",
+        "none"
+    ]
+
+    if texto in valores_no_inicio:
+        return "No inició"
+
+    if "no inicio" in texto:
+        return "No inició"
+
+    return "Inició"
+
+
+def eval_convertir_porcentaje(valor):
+    if pd.isna(valor):
+        return np.nan
+
+    texto = str(valor).strip()
+
+    if texto == "":
+        return np.nan
+
+    texto = texto.replace("%", "")
+    texto = texto.replace(",", ".")
+
+    try:
+        numero = float(texto)
+    except ValueError:
+        return np.nan
+
+    if 0 <= numero <= 1:
+        return numero * 100
+
+    if 0 <= numero <= 100:
+        return numero
+
+    return np.nan
+
+
+def eval_hex_a_rgba(color_hex, alpha=0.15):
+    color_hex = color_hex.lstrip("#")
+
+    if len(color_hex) != 6:
+        return f"rgba(120, 120, 120, {alpha})"
+
+    rojo = int(color_hex[0:2], 16)
+    verde = int(color_hex[2:4], 16)
+    azul = int(color_hex[4:6], 16)
+
+    return f"rgba({rojo}, {verde}, {azul}, {alpha})"
+
+
+def eval_detectar_columnas_areas(df):
+    areas_detectadas = {}
+
+    for columna in df.columns:
+        texto = util_normalizar_texto(columna)
+
+        texto_compacto = re.sub(
+            r"[^a-z0-9]",
+            "",
+            texto
+        )
+
+        if "seccion" not in texto_compacto:
+            continue
+
+        if "porcentajecorrectas" not in texto_compacto:
+            continue
+
+        coincidencia = re.search(
+            r"seccion([a-z0-9]+?)porcentajecorrectas",
+            texto_compacto
+        )
+
+        if coincidencia:
+            codigo = coincidencia.group(1).upper()
+            areas_detectadas[codigo] = columna
+
+    areas_ordenadas = {}
+
+    for codigo in EVAL_ORDEN_AREAS:
+        if codigo in areas_detectadas:
+            areas_ordenadas[codigo] = areas_detectadas[codigo]
+
+    for codigo, columna in areas_detectadas.items():
+        if codigo not in areas_ordenadas:
+            areas_ordenadas[codigo] = columna
+
+    return areas_ordenadas
+
+
+def eval_procesar_archivo(archivo):
+    df = eval_leer_csv_archivo(archivo)
+
+    bloque = eval_identificar_bloque_archivo(archivo.name)
+
+    if bloque is None:
+        raise ValueError(
+            "No se identificó el bloque académico. "
+            "El archivo debe contener Administración, Arquitectura o Ingeniería."
+        )
+
+    columna_carrera = util_encontrar_columna(
+        df,
+        ["Carrera"]
+    )
+
+    columna_inicio = util_encontrar_columna(
+        df,
+        [
+            "InicioExamen",
+            "Inicio Examen",
+            "Inició examen",
+            "Inicio"
+        ]
+    )
+
+    if columna_carrera is None:
+        raise ValueError(
+            f"{archivo.name}: no se encontró la columna Carrera."
+        )
+
+    if columna_inicio is None:
+        raise ValueError(
+            f"{archivo.name}: no se encontró la columna InicioExamen."
+        )
+
+    areas_detectadas = eval_detectar_columnas_areas(df)
+
+    if not areas_detectadas:
+        raise ValueError(
+            f"{archivo.name}: no se detectaron columnas de áreas evaluadas."
+        )
+
+    df["Archivo_origen"] = archivo.name
+    df["Bloque"] = bloque
+
+    df["Carrera_normalizada"] = df[
+        columna_carrera
+    ].apply(
+        eval_limpiar_nombre_carrera
+    )
+
+    df["Estatus_inicio"] = df[
+        columna_inicio
+    ].apply(
+        eval_clasificar_inicio
+    )
+
+    for codigo, columna in areas_detectadas.items():
+        df[f"Area_{codigo}"] = df[
+            columna
+        ].apply(
+            eval_convertir_porcentaje
+        )
+
+    columnas_areas = [
+        f"Area_{codigo}"
+        for codigo in areas_detectadas.keys()
+    ]
+
+    df["Promedio_global_individual"] = df[
+        columnas_areas
+    ].mean(axis=1)
+
+    return df, areas_detectadas
+
+
+def eval_clasificar_nivel_desempeno(valor):
+    if pd.isna(valor):
+        return None
+
+    if 0 <= valor < 25:
+        return "Bajo"
+
+    if 25 <= valor < 50:
+        return "Básico"
+
+    if 50 <= valor < 75:
+        return "Satisfactorio"
+
+    if 75 <= valor <= 100:
+        return "Alto"
+
+    return None
+
+
+def eval_crear_promedio_dimensiones(df, areas_detectadas):
+    df_iniciaron = df[
+        df["Estatus_inicio"] == "Inició"
+    ].copy()
+
+    resultados = []
+
+    for codigo in areas_detectadas.keys():
+        columna = f"Area_{codigo}"
+
+        if columna not in df_iniciaron.columns:
+            continue
+
+        promedio = df_iniciaron[columna].mean()
+
+        if pd.notna(promedio):
+            resultados.append(
+                {
+                    "Código": codigo,
+                    "Dimensión": EVAL_ETIQUETAS_AREAS.get(
+                        codigo,
+                        codigo
+                    ),
+                    "Promedio": round(float(promedio), 1)
+                }
+            )
+
+    return pd.DataFrame(resultados)
+
+
+def eval_crear_distribucion_por_dimension(df, areas_detectadas):
+    df_iniciaron = df[
+        df["Estatus_inicio"] == "Inició"
+    ].copy()
+
+    registros = []
+
+    for codigo in areas_detectadas.keys():
+        columna = f"Area_{codigo}"
+
+        if columna not in df_iniciaron.columns:
+            continue
+
+        valores = df_iniciaron[columna].dropna()
+
+        if valores.empty:
+            continue
+
+        total = len(valores)
+
+        niveles = valores.apply(
+            eval_clasificar_nivel_desempeno
+        )
+
+        conteos = niveles.value_counts()
+
+        for nivel in EVAL_ORDEN_NIVELES:
+            cantidad = int(conteos.get(nivel, 0))
+            porcentaje = cantidad / total * 100
+
+            registros.append(
+                {
+                    "Código": codigo,
+                    "Dimensión": EVAL_ETIQUETAS_AREAS.get(
+                        codigo,
+                        codigo
+                    ),
+                    "Nivel": nivel,
+                    "Aspirantes": cantidad,
+                    "Total": total,
+                    "Porcentaje": porcentaje
+                }
+            )
+
+    tabla = pd.DataFrame(registros)
+
+    if tabla.empty:
+        return tabla
+
+    promedios = eval_crear_promedio_dimensiones(
+        df,
+        areas_detectadas
+    )
+
+    tabla = tabla.merge(
+        promedios[
+            [
+                "Código",
+                "Promedio"
+            ]
+        ],
+        on="Código",
+        how="left"
+    )
+
+    orden_codigo = {
+        codigo: indice
+        for indice, codigo in enumerate(EVAL_ORDEN_AREAS)
+    }
+
+    tabla["Orden"] = tabla["Código"].map(
+        orden_codigo
+    ).fillna(999)
+
+    tabla = tabla.sort_values(
+        [
+            "Orden",
+            "Nivel"
+        ]
+    )
+
+    tabla["Nivel"] = pd.Categorical(
+        tabla["Nivel"],
+        categories=EVAL_ORDEN_NIVELES,
+        ordered=True
+    )
+
+    tabla["Etiqueta"] = tabla["Porcentaje"].apply(
+        lambda valor: f"{valor:.0f}%"
+        if valor >= 8
+        else ""
+    )
+
+    return tabla
+
+
+def eval_crear_diagnostico_carrera(
+    df_carrera,
+    df_bloque,
+    areas_detectadas,
+    carrera_seleccionada
+):
+    promedio_carrera = eval_crear_promedio_dimensiones(
+        df_carrera,
+        areas_detectadas
+    )
+
+    if promedio_carrera.empty:
+        return "No hay información suficiente para generar un diagnóstico."
+
+    ranking = promedio_carrera.sort_values(
+        "Promedio",
+        ascending=True
+    ).reset_index(drop=True)
+
+    prioridades = ranking.head(2)
+    fortaleza = ranking.iloc[-1]
+
+    promedio_global_carrera = df_carrera[
+        (
+            df_carrera["Estatus_inicio"] == "Inició"
+        )
+        &
+        (
+            df_carrera["Promedio_global_individual"].notna()
+        )
+    ][
+        "Promedio_global_individual"
+    ].mean()
+
+    promedio_global_bloque = df_bloque[
+        (
+            df_bloque["Estatus_inicio"] == "Inició"
+        )
+        &
+        (
+            df_bloque["Promedio_global_individual"].notna()
+        )
+    ][
+        "Promedio_global_individual"
+    ].mean()
+
+    diferencia = promedio_global_carrera - promedio_global_bloque
+
+    if diferencia >= 0:
+        comparacion = f"{diferencia:.1f} puntos por encima"
+    else:
+        comparacion = f"{abs(diferencia):.1f} puntos por debajo"
+
+    texto_prioridades = ", ".join(
+        [
+            f"{fila['Dimensión']} ({fila['Promedio']:.1f}%)"
+            for _, fila in prioridades.iterrows()
+        ]
+    )
+
+    bloque = df_bloque["Bloque"].iloc[0]
+
+    return (
+        f"**{carrera_seleccionada}** presenta un promedio global de "
+        f"**{promedio_global_carrera:.1f}%**, "
+        f"{comparacion} del promedio general de "
+        f"**{EVAL_BLOQUES[bloque]}**. "
+        f"Las principales áreas de fortalecimiento son "
+        f"**{texto_prioridades}**. "
+        f"La dimensión con mejor resultado es "
+        f"**{fortaleza['Dimensión']}** "
+        f"({fortaleza['Promedio']:.1f}%)."
+    )
+
+
+def eval_mostrar_radar_carrera(
+    df_carrera,
+    df_bloque,
+    areas_detectadas,
+    carrera_seleccionada,
+    nombre_bloque
+):
+    promedio_carrera = eval_crear_promedio_dimensiones(
+        df_carrera,
+        areas_detectadas
+    )
+
+    promedio_bloque = eval_crear_promedio_dimensiones(
+        df_bloque,
+        areas_detectadas
+    )
+
+    if promedio_carrera.empty:
+        st.info("No hay datos suficientes para generar el radar.")
+        return
+
+    orden_codigo = {
+        codigo: indice
+        for indice, codigo in enumerate(EVAL_ORDEN_AREAS)
+    }
+
+    promedio_carrera = promedio_carrera.sort_values(
+        "Código",
+        key=lambda serie: serie.map(orden_codigo)
+    )
+
+    codigos = promedio_carrera["Código"].tolist()
+    etiquetas = promedio_carrera["Dimensión"].tolist()
+    valores_carrera = promedio_carrera["Promedio"].tolist()
+
+    valores_bloque = []
+
+    for codigo in codigos:
+        fila_bloque = promedio_bloque[
+            promedio_bloque["Código"] == codigo
+        ]
+
+        if fila_bloque.empty:
+            valores_bloque.append(0)
+        else:
+            valores_bloque.append(
+                float(
+                    fila_bloque["Promedio"].iloc[0]
+                )
+            )
+
+    ranking_bajo = promedio_carrera.sort_values(
+        "Promedio",
+        ascending=True
+    ).head(2)
+
+    etiquetas_bajas = ranking_bajo["Dimensión"].tolist()
+    valores_bajos = ranking_bajo["Promedio"].tolist()
+
+    etiquetas_cerradas = etiquetas + [etiquetas[0]]
+    valores_carrera_cerrados = valores_carrera + [
+        valores_carrera[0]
+    ]
+    valores_bloque_cerrados = valores_bloque + [
+        valores_bloque[0]
+    ]
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatterpolar(
+            r=valores_bloque_cerrados,
+            theta=etiquetas_cerradas,
+            mode="lines+markers",
+            name=f"Promedio {nombre_bloque}",
+            line=dict(
+                color="#9E9E9E",
+                width=2,
+                dash="dash"
+            ),
+            marker=dict(
+                color="#9E9E9E",
+                size=6
+            ),
+            hovertemplate=(
+                "<b>Promedio del archivo</b><br>"
+                "%{theta}: %{r:.1f}%"
+                "<extra></extra>"
+            )
+        )
+    )
+
+    fig.add_trace(
+        go.Scatterpolar(
+            r=valores_carrera_cerrados,
+            theta=etiquetas_cerradas,
+            mode="lines+markers",
+            name=carrera_seleccionada,
+            line=dict(
+                color="#4C78A8",
+                width=4
+            ),
+            marker=dict(
+                color="#4C78A8",
+                size=8
+            ),
+            fill="toself",
+            fillcolor=eval_hex_a_rgba(
+                "#4C78A8",
+                alpha=0.14
+            ),
+            hovertemplate=(
+                f"<b>{carrera_seleccionada}</b><br>"
+                "%{theta}: %{r:.1f}%"
+                "<extra></extra>"
+            )
+        )
+    )
+
+    fig.add_trace(
+        go.Scatterpolar(
+            r=valores_bajos,
+            theta=etiquetas_bajas,
+            mode="markers",
+            name="Áreas prioritarias",
+            marker=dict(
+                color="#E74C3C",
+                size=14,
+                line=dict(
+                    color="white",
+                    width=2
+                )
+            ),
+            hovertemplate=(
+                "<b>Área prioritaria</b><br>"
+                "%{theta}: %{r:.1f}%"
+                "<extra></extra>"
+            )
+        )
+    )
+
+    fig.update_layout(
+        title=f"Perfil de dimensiones · {carrera_seleccionada}",
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100],
+                ticksuffix="%"
+            )
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.15,
+            xanchor="center",
+            x=0.5
+        ),
+        height=560,
+        margin=dict(
+            t=80,
+            b=80,
+            l=40,
+            r=40
+        )
+    )
+
+    col_grafica, col_prioridades = st.columns(
+        [3, 1]
+    )
+
+    with col_grafica:
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+    with col_prioridades:
+        st.markdown("### 🔴 Áreas prioritarias")
+        st.caption(
+            "Dimensiones con menor promedio en la carrera."
+        )
+
+        for _, fila in ranking_bajo.iterrows():
+            st.metric(
+                fila["Dimensión"],
+                f"{fila['Promedio']:.1f}%"
+            )
+
+        st.markdown("---")
+
+        st.caption(
+            f"Línea gris: promedio de {nombre_bloque}. "
+            "Puntos rojos: dimensiones prioritarias."
+        )
+
+
+def eval_mostrar_barras_distribucion_dimension(
+    df_carrera,
+    areas_detectadas,
+    carrera_seleccionada
+):
+    tabla = eval_crear_distribucion_por_dimension(
+        df_carrera,
+        areas_detectadas
+    )
+
+    if tabla.empty:
+        st.info(
+            "No hay información suficiente para generar la gráfica."
+        )
+        return
+
+    dimensiones = (
+        tabla[
+            [
+                "Código",
+                "Dimensión",
+                "Orden"
+            ]
+        ]
+        .drop_duplicates()
+        .sort_values("Orden")
+    )
+
+    nombres_dimensiones = dimensiones[
+        "Dimensión"
+    ].tolist()
+
+    promedios = (
+        tabla[
+            [
+                "Dimensión",
+                "Promedio"
+            ]
+        ]
+        .drop_duplicates()
+        .set_index("Dimensión")
+        .reindex(nombres_dimensiones)
+        .reset_index()
+    )
+
+    fig = go.Figure()
+
+    for nivel in EVAL_ORDEN_NIVELES:
+        datos_nivel = tabla[
+            tabla["Nivel"] == nivel
+        ].copy()
+
+        datos_nivel = (
+            datos_nivel
+            .set_index("Dimensión")
+            .reindex(nombres_dimensiones)
+            .reset_index()
+        )
+
+        fig.add_trace(
+            go.Bar(
+                x=datos_nivel["Dimensión"],
+                y=datos_nivel["Porcentaje"],
+                name=f"{nivel} · {EVAL_RANGOS_NIVELES[nivel]}",
+                marker_color=EVAL_COLORES_NIVELES[nivel],
+                text=datos_nivel["Etiqueta"],
+                textposition="inside",
+                insidetextanchor="middle",
+                customdata=np.column_stack(
+                    [
+                        datos_nivel["Aspirantes"],
+                        datos_nivel["Total"],
+                        datos_nivel["Porcentaje"]
+                    ]
+                ),
+                hovertemplate=(
+                    "<b>%{x}</b><br>"
+                    f"<b>Rango de calificación:</b> "
+                    f"{EVAL_RANGOS_NIVELES[nivel]}<br>"
+                    "<b>Aspirantes:</b> %{customdata[0]} de %{customdata[1]}<br>"
+                    "<b>Distribución:</b> %{customdata[2]:.1f}%"
+                    "<extra></extra>"
+                )
+            )
+        )
+
+    fig.add_trace(
+        go.Scatter(
+            x=promedios["Dimensión"],
+            y=promedios["Promedio"],
+            yaxis="y2",
+            mode="markers+text",
+            name="Promedio real obtenido",
+            text=[
+                f"{valor:.1f}%"
+                for valor in promedios["Promedio"]
+            ],
+            textposition="top center",
+            marker=dict(
+                color="#111111",
+                size=11,
+                symbol="diamond",
+                line=dict(
+                    color="white",
+                    width=1.5
+                )
+            ),
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                "<b>Promedio real obtenido:</b> %{y:.1f}%"
+                "<extra></extra>"
+            )
+        )
+    )
+
+    fig.update_layout(
+        title=(
+            "Distribución de resultados y promedio real por dimensión · "
+            f"{carrera_seleccionada}"
+        ),
+        barmode="stack",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.12,
+            xanchor="center",
+            x=0.5
+        ),
+        xaxis=dict(
+            title="Dimensiones",
+            categoryorder="array",
+            categoryarray=nombres_dimensiones
+        ),
+        yaxis=dict(
+            title="Distribución de aspirantes",
+            range=[0, 100],
+            ticksuffix="%"
+        ),
+        yaxis2=dict(
+            title="Promedio de calificación obtenida",
+            overlaying="y",
+            side="right",
+            range=[0, 100],
+            ticksuffix="%",
+            showgrid=False
+        ),
+        height=620,
+        margin=dict(
+            t=115,
+            b=80,
+            l=65,
+            r=75
+        )
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+    st.caption(
+        "Las barras muestran cómo se distribuyen los aspirantes en los rangos "
+        "de calificación. El rombo negro indica el promedio real obtenido "
+        "en cada dimensión."
+    )
+
+
+def render_evaluatec():
+    st.title("📘 Resultados EVALUATEC 2026")
+    st.caption("Perfil académico por carrera.")
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Carga EVALUATEC")
+
+    archivos_subidos = st.sidebar.file_uploader(
+        "Carga los 3 archivos oficiales EVALUATEC",
+        type=["csv"],
+        accept_multiple_files=True,
+        key="eval_archivos"
+    )
+
+    if not archivos_subidos:
+        st.info(
+            "Carga los tres archivos CSV: Administración, Arquitectura e Ingeniería."
+        )
+        st.stop()
+
+    if len(archivos_subidos) != 3:
+        st.warning(
+            f"Actualmente cargaste {len(archivos_subidos)} archivo(s). "
+            "Deben cargarse exactamente 3."
+        )
+        st.stop()
+
+    datos_por_bloque = {}
+    errores = []
+
+    for archivo in archivos_subidos:
+        try:
+            df_archivo, areas_detectadas = eval_procesar_archivo(
+                archivo
+            )
+
+            bloque = df_archivo["Bloque"].iloc[0]
+
+            datos_por_bloque[bloque] = {
+                "df": df_archivo,
+                "areas": areas_detectadas,
+                "archivo": archivo.name
+            }
+
+        except Exception as error:
+            errores.append(
+                f"{archivo.name}: {error}"
+            )
+
+    if errores:
+        for error in errores:
+            st.error(error)
+
+    if not datos_por_bloque:
+        st.stop()
+
+    bloques_disponibles = [
+        codigo
+        for codigo in EVAL_BLOQUES
+        if codigo in datos_por_bloque
+    ]
+
+    bloque_seleccionado = st.radio(
+        "Selecciona el archivo o bloque académico",
+        options=bloques_disponibles,
+        horizontal=True,
+        format_func=lambda codigo: (
+            f"{EVAL_ICONOS_BLOQUES[codigo]} {EVAL_BLOQUES[codigo]}"
+        ),
+        label_visibility="collapsed",
+        key="eval_bloque"
+    )
+
+    informacion_bloque = datos_por_bloque[
+        bloque_seleccionado
+    ]
+
+    df_bloque = informacion_bloque["df"].copy()
+    areas_detectadas = informacion_bloque["areas"]
+    nombre_bloque = EVAL_BLOQUES[bloque_seleccionado]
+
+    st.markdown(f"## {nombre_bloque}")
+
+    st.caption(
+        f"Archivo analizado: {informacion_bloque['archivo']}"
+    )
+
+    carreras_disponibles = sorted(
+        df_bloque["Carrera_normalizada"]
+        .dropna()
+        .unique()
+    )
+
+    carrera_seleccionada = st.selectbox(
+        "Selecciona la carrera",
+        options=carreras_disponibles,
+        key=f"eval_carrera_{bloque_seleccionado}"
+    )
+
+    df_carrera = df_bloque[
+        df_bloque["Carrera_normalizada"]
+        == carrera_seleccionada
+    ].copy()
+
+    total_registrados = len(df_carrera)
+
+    total_iniciaron = int(
+        (
+            df_carrera["Estatus_inicio"] == "Inició"
+        ).sum()
+    )
+
+    total_no_iniciaron = int(
+        (
+            df_carrera["Estatus_inicio"] == "No inició"
+        ).sum()
+    )
+
+    porcentaje_inicio = (
+        total_iniciaron / total_registrados * 100
+        if total_registrados > 0
+        else 0
+    )
+
+    promedio_global = df_carrera[
+        (
+            df_carrera["Estatus_inicio"] == "Inició"
+        )
+        &
+        (
+            df_carrera["Promedio_global_individual"].notna()
+        )
+    ][
+        "Promedio_global_individual"
+    ].mean()
+
+    st.markdown(f"### Perfil de {carrera_seleccionada}")
+
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    col1.metric("Registrados", f"{total_registrados:,}")
+    col2.metric("Iniciaron", f"{total_iniciaron:,}")
+    col3.metric("No iniciaron", f"{total_no_iniciaron:,}")
+    col4.metric("% de inicio", f"{porcentaje_inicio:.1f}%")
+    col5.metric(
+        "Promedio global",
+        f"{promedio_global:.1f}%"
+        if pd.notna(promedio_global)
+        else "Sin dato"
+    )
+
+    st.markdown("## Perfil de dimensiones")
+
+    eval_mostrar_radar_carrera(
+        df_carrera=df_carrera,
+        df_bloque=df_bloque,
+        areas_detectadas=areas_detectadas,
+        carrera_seleccionada=carrera_seleccionada,
+        nombre_bloque=nombre_bloque
+    )
+
+    st.markdown("## Distribución de calificaciones por dimensión")
+
+    eval_mostrar_barras_distribucion_dimension(
+        df_carrera=df_carrera,
+        areas_detectadas=areas_detectadas,
+        carrera_seleccionada=carrera_seleccionada
+    )
+
+    st.markdown("## Diagnóstico ejecutivo")
+
+    diagnostico = eval_crear_diagnostico_carrera(
+        df_carrera=df_carrera,
+        df_bloque=df_bloque,
+        areas_detectadas=areas_detectadas,
+        carrera_seleccionada=carrera_seleccionada
+    )
+
+    st.info(diagnostico)
+
+
+# ============================================================
+# ============================================================
+# MÓDULO 2: HISTORIAL DE ASPIRANTES
+# ============================================================
+# ============================================================
+
+def hist_nombres_unicos(encabezados):
+    usados = {}
+    resultado = []
+
+    for posicion, encabezado in enumerate(encabezados, start=1):
+
+        if pd.isna(encabezado) or str(encabezado).strip() == "":
+            nombre = f"Columna_sin_nombre_{posicion}"
+        else:
+            nombre = str(encabezado).strip()
+
+        if nombre in usados:
+            usados[nombre] += 1
+            nombre = f"{nombre}_{usados[nombre]}"
+        else:
+            usados[nombre] = 1
+
+        resultado.append(nombre)
+
+    return resultado
+
+
+def hist_buscar_fila_encabezados(df_crudo):
+    palabras_clave = [
+        "matricula/id",
+        "matricula",
+        "id",
+        "apellido paterno",
+        "apellido materno",
+        "nombre (s)",
+        "nombre"
+    ]
+
+    limite = min(len(df_crudo), 40)
+
+    for indice in range(limite):
+
+        valores = [
+            util_limpiar_texto(valor)
+            for valor in df_crudo.iloc[indice].tolist()
+        ]
+
+        coincidencias = sum(
+            any(palabra in valor for valor in valores)
+            for palabra in palabras_clave
+        )
+
+        if coincidencias >= 2:
+            return indice
+
+    return None
+
+
+def hist_obtener_nombre_carrera(nombre_hoja, df_crudo):
+    limite = min(len(df_crudo), 15)
+
+    for indice in range(limite):
+
+        fila = df_crudo.iloc[indice].tolist()
+
+        for posicion, valor in enumerate(fila):
+
+            if util_limpiar_texto(valor) == "carrera":
+
+                if posicion + 1 < len(fila):
+                    posible_carrera = fila[posicion + 1]
+
+                    if pd.notna(posible_carrera):
+                        return str(posible_carrera).strip()
+
+    return str(nombre_hoja).strip()
+
+
+def hist_convertir_promedio(valor):
+    if pd.isna(valor) or str(valor).strip() == "":
+        return np.nan, "Sin dato"
+
+    if isinstance(valor, (datetime, date, pd.Timestamp)):
+        return np.nan, "Dato dudoso: formato fecha"
+
+    texto = str(valor).strip()
+    texto = texto.replace("\xa0", " ")
+    texto = texto.replace(",", ".")
+    texto = texto.lstrip("'").strip()
+
+    try:
+        numero = float(texto)
+
+    except (TypeError, ValueError):
+        return np.nan, "Dato dudoso: no numérico"
+
+    if 0 <= numero <= 10:
+        return round(numero * 10, 2), "Convertido de escala 0-10"
+
+    if 10 < numero <= 100:
+        return round(numero, 2), "Válido: escala 0-100"
+
+    return np.nan, "Dato dudoso: fuera de rango"
+
+
+def hist_clasificar_rango_promedio(valor):
+    if pd.isna(valor):
+        return "Sin dato"
+
+    if 60 <= valor < 70:
+        return "60-69"
+
+    if 70 <= valor < 80:
+        return "70-79"
+
+    if 80 <= valor < 90:
+        return "80-89"
+
+    if 90 <= valor <= 100:
+        return "90-100"
+
+    return "Fuera de rango"
+
+
+def hist_normalizar_sexo(valor):
+    if pd.isna(valor):
+        return "Sin especificar"
+
+    texto = util_limpiar_texto(valor)
+
+    if texto in ["hombre", "masculino", "m", "male"]:
+        return "Hombre"
+
+    if texto in ["mujer", "femenino", "f", "female"]:
+        return "Mujer"
+
+    return "Sin especificar"
+
+
+def hist_clasificar_estado_procedencia(valor):
+    if pd.isna(valor):
+        return "Sin dato"
+
+    texto = util_limpiar_texto(valor)
+
+    if texto in ["", "nan", "none", "escuela de procedencia"]:
+        return "Sin dato"
+
+    palabras_jalisco = [
+        "jalisco",
+        "tuxpan",
+        "cihuatlan",
+        "autlan",
+        "guadalajara",
+        "zapopan",
+        "tonala",
+        "sayula",
+        "zapotiltic",
+        "zapotlan",
+        "ciudad guzman",
+        "tequila",
+        "casimiro castillo",
+        "el grullo",
+        "union de tula",
+        "tamazula",
+        "teocuitatlan",
+        "universidad de guadalajara",
+        "udeg"
+    ]
+
+    if any(palabra in texto for palabra in palabras_jalisco):
+        return "Jalisco"
+
+    palabras_michoacan = [
+        "michoacan",
+        "coahuayana",
+        "coalcoman",
+        "morelia",
+        "zamora",
+        "lazaro cardenas",
+        "uruapan",
+        "apatzingan",
+        "maravatio"
+    ]
+
+    if any(palabra in texto for palabra in palabras_michoacan):
+        return "Michoacán"
+
+    palabras_nayarit = [
+        "nayarit",
+        "tepic",
+        "bahia de banderas",
+        "santiago ixcuintla",
+        "compostela"
+    ]
+
+    if any(palabra in texto for palabra in palabras_nayarit):
+        return "Nayarit"
+
+    palabras_guanajuato = [
+        "guanajuato",
+        "leon",
+        "irapuato",
+        "celaya",
+        "salamanca"
+    ]
+
+    if any(palabra in texto for palabra in palabras_guanajuato):
+        return "Guanajuato"
+
+    if "nuevo leon" in texto or "monterrey" in texto:
+        return "Nuevo León"
+
+    if "sinaloa" in texto or "culiacan" in texto:
+        return "Sinaloa"
+
+    if "durango" in texto:
+        return "Durango"
+
+    if "sonora" in texto or "hermosillo" in texto:
+        return "Sonora"
+
+    if "baja california" in texto or "tijuana" in texto:
+        return "Baja California"
+
+    if "veracruz" in texto:
+        return "Veracruz"
+
+    if "ciudad de mexico" in texto or "cdmx" in texto:
+        return "Ciudad de México"
+
+    if any(
+        palabra in texto
+        for palabra in ["canada", "canadá", "usa", "united states"]
+    ):
+        return "Internacional"
+
+    return "Colima"
+
+
+def hist_obtener_numero_institucion(texto, expresiones):
+    for expresion in expresiones:
+
+        coincidencia = re.search(expresion, texto)
+
+        if coincidencia:
+            return coincidencia.group(1)
+
+    return None
+
+
+def hist_normalizar_escuela_procedencia(valor):
+    if pd.isna(valor):
+        return "Sin dato"
+
+    texto_visible = util_limpiar_texto_visible(valor)
+    texto = util_limpiar_texto(valor)
+    texto_compacto = re.sub(r"[^a-z0-9]", "", texto)
+
+    if texto in ["", "nan", "none", "escuela de procedencia"]:
+        return "Sin dato"
+
+    if (
+        "universidad de colima" in texto
+        or "u de c" in texto
+        or "udec" in texto
+        or "bachillerato udec" in texto
+        or re.search(r"\bbachillerato\s*([1-9]|[12][0-9]|30)\b", texto)
+    ):
+        return "Universidad de Colima (U de C)"
+
+    if (
+        "telebachillerato" in texto
+        or "tele bachillerato" in texto
+        or "telebach" in texto
+        or "telebach" in texto_compacto
+    ):
+        return "Telebachillerato"
+
+    if (
+        "colegio de bachilleres" in texto
+        or "colegio bachilleres" in texto
+        or "colegio de bach" in texto
+        or "colegio bach" in texto
+        or "cobach" in texto_compacto
+        or "coba" in texto_compacto
+    ):
+        return "Colegio de Bachilleres"
+
+    if "cbtis" in texto_compacto or "cbti" in texto_compacto:
+
+        numero = hist_obtener_numero_institucion(
+            texto,
+            [
+                r"cbtis\s*#?\s*(\d+)",
+                r"cbti[s]?\s*#?\s*(\d+)"
+            ]
+        )
+
+        if numero:
+            return f"CBTis {numero}"
+
+        return "CBTis"
+
+    if "cetis" in texto_compacto:
+
+        numero = hist_obtener_numero_institucion(
+            texto,
+            [r"cetis\s*#?\s*(\d+)"]
+        )
+
+        if numero:
+            return f"CETis {numero}"
+
+        return "CETis"
+
+    if "cbta" in texto_compacto:
+
+        numero = hist_obtener_numero_institucion(
+            texto,
+            [r"cbta\s*#?\s*(\d+)"]
+        )
+
+        if numero:
+            return f"CBTA {numero}"
+
+        return "CBTA"
+
+    if "emsad" in texto_compacto:
+
+        numero = hist_obtener_numero_institucion(
+            texto,
+            [r"emsad\s*#?\s*(\d+)"]
+        )
+
+        if numero:
+            return f"EMSAD {numero}"
+
+        return "EMSAD"
+
+    if "isenco" in texto_compacto:
+        return "ISENCO"
+
+    if "conalep" in texto_compacto:
+        return "CONALEP"
+
+    if "cecyte" in texto_compacto:
+        return "CECyTE"
+
+    if "icep" in texto_compacto:
+        return "ICEP"
+
+    if (
+        "universidad de guadalajara" in texto
+        or "udeg" in texto_compacto
+        or "prepa regional tuxpan" in texto
+    ):
+        return "Universidad de Guadalajara (UdeG)"
+
+    if "anahuac" in texto:
+        return "Preparatoria Anáhuac"
+
+    if "campoverde" in texto_compacto or "campo verde" in texto:
+        return "Colegio Campoverde"
+
+    if "adonai" in texto:
+        return "Instituto Adonai"
+
+    if "prepa en linea" in texto:
+        return "Prepa en Línea SEP"
+
+    if "acredita" in texto and "bach" in texto:
+        return "Acredita-Bach SEP"
+
+    return texto_visible.title()
+
+
+def hist_procesar_hoja(contenido_archivo, nombre_hoja):
+    archivo = io.BytesIO(contenido_archivo)
+
+    df_crudo = pd.read_excel(
+        archivo,
+        sheet_name=nombre_hoja,
+        header=None,
+        dtype=object
+    )
+
+    fila_encabezados = hist_buscar_fila_encabezados(df_crudo)
+
+    if fila_encabezados is None:
+        return None, {
+            "Hoja": nombre_hoja,
+            "Estatus": "No procesada",
+            "Detalle": "No se identificó una fila de encabezados."
+        }
+
+    carrera = hist_obtener_nombre_carrera(nombre_hoja, df_crudo)
+
+    encabezados = hist_nombres_unicos(
+        df_crudo.iloc[fila_encabezados].tolist()
+    )
+
+    df = df_crudo.iloc[fila_encabezados + 1:].copy()
+    df.columns = encabezados
+    df = df.dropna(how="all").copy()
+
+    columna_id = util_encontrar_columna(
+        df,
+        ["Matrícula/ID", "Matrícula", "ID"]
+    )
+
+    if columna_id is not None:
+        df = df[df[columna_id].notna()].copy()
+
+    df["Carrera"] = carrera
+    df["Hoja_origen"] = nombre_hoja
+
+    columna_promedio = util_encontrar_columna(
+        df,
+        [
+            "Promedio Bachillerato",
+            "Promedio de Bachillerato",
+            "Promedio"
+        ]
+    )
+
+    if columna_promedio is not None:
+
+        df["Promedio_original"] = df[columna_promedio]
+
+        resultado = df[columna_promedio].apply(hist_convertir_promedio)
+
+        df["Promedio_normalizado_100"] = resultado.apply(
+            lambda x: x[0]
+        )
+
+        df["Estatus_promedio"] = resultado.apply(
+            lambda x: x[1]
+        )
+
+    else:
+        df["Promedio_original"] = np.nan
+        df["Promedio_normalizado_100"] = np.nan
+        df["Estatus_promedio"] = "No se encontró columna de promedio"
+
+    return df, {
+        "Hoja": nombre_hoja,
+        "Estatus": "Procesada",
+        "Detalle": f"{len(df):,} aspirantes identificados."
+    }
+
+
+@st.cache_data(show_spinner=False)
+def hist_procesar_archivo_excel(contenido_archivo):
+    archivo = io.BytesIO(contenido_archivo)
+    excel = pd.ExcelFile(archivo)
+
+    bases = []
+    bitacora = []
+
+    for hoja in excel.sheet_names:
+
+        df_hoja, resultado = hist_procesar_hoja(
+            contenido_archivo,
+            hoja
+        )
+
+        bitacora.append(resultado)
+
+        if df_hoja is not None and not df_hoja.empty:
+            bases.append(df_hoja)
+
+    if not bases:
+        return pd.DataFrame(), pd.DataFrame(bitacora)
+
+    df_general = pd.concat(
+        bases,
+        ignore_index=True,
+        sort=False
+    )
+
+    return df_general, pd.DataFrame(bitacora)
+
+
+def hist_crear_tabla_calificaciones_por_sexo(df):
+    orden_rangos = ["60-69", "70-79", "80-89", "90-100"]
+
+    df_calificaciones = df[
+        df["Rango_promedio"].isin(orden_rangos)
+    ].copy()
+
+    if df_calificaciones.empty:
+        return pd.DataFrame()
+
+    tabla = (
+        df_calificaciones
+        .groupby(["Sexo_normalizado", "Rango_promedio"])
+        .size()
+        .reset_index(name="Aspirantes")
+    )
+
+    tabla["Rango_promedio"] = pd.Categorical(
+        tabla["Rango_promedio"],
+        categories=orden_rangos,
+        ordered=True
+    )
+
+    tabla["Porcentaje"] = (
+        tabla
+        .groupby("Sexo_normalizado")["Aspirantes"]
+        .transform(lambda x: (x / x.sum()) * 100)
+    )
+
+    tabla["Etiqueta"] = tabla["Porcentaje"].apply(
+        lambda valor: f"{valor:.1f}%" if valor >= 5 else ""
+    )
+
+    return tabla
+
+
+def hist_crear_distribucion_calificaciones_bachillerato(df, top_n=10):
+    orden_rangos = ["60-69", "70-79", "80-89", "90-100"]
+
+    df_valido = df[
+        (
+            df["Bachillerato_procedencia"] != "Sin dato"
+        )
+        &
+        (
+            df["Rango_promedio"].isin(orden_rangos)
+        )
+    ].copy()
+
+    if df_valido.empty:
+        return pd.DataFrame()
+
+    totales = (
+        df_valido
+        .groupby("Bachillerato_procedencia")
+        .size()
+        .reset_index(name="Total")
+        .sort_values("Total", ascending=False)
+    )
+
+    top_bachilleratos = totales.head(top_n).copy()
+
+    escuelas_top = top_bachilleratos[
+        "Bachillerato_procedencia"
+    ].tolist()
+
+    df_valido = df_valido[
+        df_valido["Bachillerato_procedencia"].isin(escuelas_top)
+    ].copy()
+
+    tabla = (
+        df_valido
+        .groupby(
+            [
+                "Bachillerato_procedencia",
+                "Rango_promedio"
+            ]
+        )
+        .size()
+        .reset_index(name="Aspirantes")
+    )
+
+    tabla = tabla.merge(
+        top_bachilleratos,
+        on="Bachillerato_procedencia",
+        how="left"
+    )
+
+    tabla["Porcentaje"] = (
+        tabla["Aspirantes"]
+        / tabla["Total"]
+        * 100
+    )
+
+    tabla["Rango_promedio"] = pd.Categorical(
+        tabla["Rango_promedio"],
+        categories=orden_rangos,
+        ordered=True
+    )
+
+    tabla["Etiqueta"] = tabla["Porcentaje"].apply(
+        lambda valor: f"{valor:.0f}%" if valor >= 8 else ""
+    )
+
+    tabla["Escuela_etiqueta"] = tabla.apply(
+        lambda fila: (
+            f"{fila['Bachillerato_procedencia']} "
+            f"(n={int(fila['Total'])})"
+        ),
+        axis=1
+    )
+
+    orden_escuelas = [
+        f"{fila['Bachillerato_procedencia']} (n={int(fila['Total'])})"
+        for _, fila in top_bachilleratos.iterrows()
+    ]
+
+    tabla["Escuela_etiqueta"] = pd.Categorical(
+        tabla["Escuela_etiqueta"],
+        categories=orden_escuelas[::-1],
+        ordered=True
+    )
+
+    return tabla
+
+
+def hist_crear_mapa_colores_carreras(df):
+    paleta = (
+        px.colors.qualitative.Alphabet
+        + px.colors.qualitative.Dark24
+        + px.colors.qualitative.Light24
+        + px.colors.qualitative.Bold
+    )
+
+    carreras = sorted(
+        df["Carrera"]
+        .dropna()
+        .astype(str)
+        .unique()
+    )
+
+    return {
+        carrera: paleta[indice % len(paleta)]
+        for indice, carrera in enumerate(carreras)
+    }
+
+
+def hist_mostrar_grafica_calificaciones(df):
+    tabla = hist_crear_tabla_calificaciones_por_sexo(df)
+
+    if tabla.empty:
+        st.info("No hay promedios válidos entre 60 y 100.")
+        return
+
+    fig = px.bar(
+        tabla,
+        x="Porcentaje",
+        y="Sexo_normalizado",
+        color="Rango_promedio",
+        orientation="h",
+        barmode="stack",
+        text="Etiqueta",
+        custom_data=["Aspirantes"],
+        category_orders={
+            "Sexo_normalizado": [
+                "Mujer",
+                "Hombre",
+                "Sin especificar"
+            ],
+            "Rango_promedio": [
+                "60-69",
+                "70-79",
+                "80-89",
+                "90-100"
+            ]
+        },
+        color_discrete_map={
+            "60-69": "#E74C3C",
+            "70-79": "#F39C12",
+            "80-89": "#F1C40F",
+            "90-100": "#27AE60"
+        }
+    )
+
+    fig.update_traces(
+        textposition="inside",
+        insidetextanchor="middle",
+        hovertemplate=(
+            "<b>Sexo:</b> %{y}<br>"
+            "<b>Rango:</b> %{fullData.name}<br>"
+            "<b>Aspirantes:</b> %{customdata[0]}<br>"
+            "<b>Porcentaje:</b> %{x:.1f}%"
+            "<extra></extra>"
+        )
+    )
+
+    fig.update_layout(
+        title="Promedio de bachillerato por sexo",
+        legend_title_text="Rango de promedio",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.08,
+            xanchor="center",
+            x=0.5
+        ),
+        xaxis=dict(
+            title="Porcentaje de aspirantes",
+            range=[0, 100],
+            ticksuffix="%"
+        ),
+        yaxis_title="",
+        height=420,
+        margin=dict(t=100, b=40, l=30, r=30)
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def hist_mostrar_grafica_semaforo_bachillerato(df):
+    tabla = hist_crear_distribucion_calificaciones_bachillerato(
+        df,
+        top_n=10
+    )
+
+    if tabla.empty:
+        st.info(
+            "No hay suficientes promedios válidos para relacionar "
+            "con bachilleratos."
+        )
+        return
+
+    fig = px.bar(
+        tabla,
+        x="Porcentaje",
+        y="Escuela_etiqueta",
+        color="Rango_promedio",
+        orientation="h",
+        barmode="stack",
+        text="Etiqueta",
+        custom_data=["Aspirantes", "Total"],
+        category_orders={
+            "Rango_promedio": [
+                "60-69",
+                "70-79",
+                "80-89",
+                "90-100"
+            ]
+        },
+        color_discrete_map={
+            "60-69": "#E74C3C",
+            "70-79": "#F39C12",
+            "80-89": "#F1C40F",
+            "90-100": "#27AE60"
+        }
+    )
+
+    fig.update_traces(
+        textposition="inside",
+        insidetextanchor="middle",
+        hovertemplate=(
+            "<b>Bachillerato:</b> %{y}<br>"
+            "<b>Rango:</b> %{fullData.name}<br>"
+            "<b>Aspirantes:</b> %{customdata[0]} de %{customdata[1]}<br>"
+            "<b>Porcentaje:</b> %{x:.1f}%"
+            "<extra></extra>"
+        )
+    )
+
+    fig.update_layout(
+        title="Distribución de calificaciones por bachillerato",
+        legend_title_text="Semáforo",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.08,
+            xanchor="center",
+            x=0.5
+        ),
+        xaxis=dict(
+            title="Porcentaje de aspirantes",
+            range=[0, 100],
+            ticksuffix="%"
+        ),
+        yaxis_title="",
+        height=720,
+        margin=dict(t=100, b=40, l=320, r=30)
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def hist_mostrar_concentrado_estados(df, max_estados=5):
+    resumen = (
+        df[
+            df["Estado_procedencia"] != "Sin dato"
+        ]
+        .groupby("Estado_procedencia")
+        .size()
+        .reset_index(name="Aspirantes")
+        .sort_values("Aspirantes", ascending=False)
+    )
+
+    if resumen.empty:
+        st.info("No hay información de estado de procedencia.")
+        return
+
+    total = resumen["Aspirantes"].sum()
+
+    if len(resumen) > max_estados:
+
+        principales = resumen.head(max_estados - 1).copy()
+        otros = resumen.iloc[max_estados - 1:]["Aspirantes"].sum()
+
+        fila_otros = pd.DataFrame({
+            "Estado_procedencia": ["Otros estados"],
+            "Aspirantes": [otros]
+        })
+
+        resumen = pd.concat(
+            [principales, fila_otros],
+            ignore_index=True
+        )
+
+    resumen["Porcentaje"] = (
+        resumen["Aspirantes"]
+        / total
+        * 100
+    ).round(1)
+
+    columnas = st.columns(len(resumen))
+
+    for columna, (_, fila) in zip(columnas, resumen.iterrows()):
+
+        columna.metric(
+            fila["Estado_procedencia"],
+            f"{int(fila['Aspirantes']):,}",
+            f"{fila['Porcentaje']:.1f}%",
+            delta_color="off"
+        )
+
+
+def hist_mostrar_sunburst_udec(df, mapa_colores_carreras):
+    df_udec = df[
+        df["Bachillerato_procedencia"]
+        == "Universidad de Colima (U de C)"
+    ].copy()
+
+    if df_udec.empty:
+        st.info("No se encontraron aspirantes provenientes de la U de C.")
+        return
+
+    resumen = (
+        df_udec
+        .groupby("Carrera")
+        .size()
+        .reset_index(name="Aspirantes")
+        .sort_values("Aspirantes", ascending=False)
+    )
+
+    total = int(resumen["Aspirantes"].sum())
+
+    labels = ["Universidad de Colima (U de C)"]
+    parents = [""]
+    values = [total]
+    ids = ["root_udec"]
+    colores = ["#595959"]
+    textos = [f"U de C<br>n={total}"]
+
+    for indice, fila in resumen.reset_index(drop=True).iterrows():
+
+        carrera = fila["Carrera"]
+        aspirantes = int(fila["Aspirantes"])
+        porcentaje = aspirantes / total * 100
+
+        labels.append(carrera)
+        parents.append("root_udec")
+        values.append(aspirantes)
+        ids.append(f"udec_carrera_{indice}")
+
+        colores.append(
+            mapa_colores_carreras.get(carrera, "#9E9E9E")
+        )
+
+        textos.append(
+            f"{carrera}<br>{porcentaje:.1f}%"
+        )
+
+    fig = go.Figure(
+        go.Sunburst(
+            ids=ids,
+            labels=labels,
+            parents=parents,
+            values=values,
+            text=textos,
+            textinfo="text",
+            branchvalues="total",
+            marker=dict(
+                colors=colores,
+                line=dict(color="#111217", width=1)
+            ),
+            insidetextorientation="radial",
+            hovertemplate=(
+                "<b>%{label}</b><br>"
+                "Aspirantes: %{value}<br>"
+                "Participación: %{percentParent:.1%}"
+                "<extra></extra>"
+            )
+        )
+    )
+
+    fig.update_layout(
+        title="Universidad de Colima → carreras elegidas",
+        height=560,
+        margin=dict(t=70, b=20, l=20, r=20)
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def hist_mostrar_sunburst_otros_bachilleratos(
+    df,
+    mapa_colores_carreras,
+    top_n=10
+):
+    df_otros = df[
+        (
+            df["Bachillerato_procedencia"]
+            != "Universidad de Colima (U de C)"
+        )
+        &
+        (
+            df["Bachillerato_procedencia"] != "Sin dato"
+        )
+    ].copy()
+
+    if df_otros.empty:
+        st.info("No hay registros de otros bachilleratos.")
+        return
+
+    totales = (
+        df_otros
+        .groupby("Bachillerato_procedencia")
+        .size()
+        .reset_index(name="Aspirantes")
+        .sort_values("Aspirantes", ascending=False)
+    )
+
+    escuelas_top = totales.head(top_n)[
+        "Bachillerato_procedencia"
+    ].tolist()
+
+    df_otros["Escuela_sunburst"] = np.where(
+        df_otros["Bachillerato_procedencia"].isin(escuelas_top),
+        df_otros["Bachillerato_procedencia"],
+        "Otros bachilleratos"
+    )
+
+    resumen_escuelas = (
+        df_otros
+        .groupby("Escuela_sunburst")
+        .size()
+        .reset_index(name="Aspirantes")
+        .sort_values("Aspirantes", ascending=False)
+    )
+
+    resumen_carreras = (
+        df_otros
+        .groupby(["Escuela_sunburst", "Carrera"])
+        .size()
+        .reset_index(name="Aspirantes")
+    )
+
+    total_externos = int(resumen_escuelas["Aspirantes"].sum())
+
+    tonos_gris = [
+        "#424242",
+        "#505050",
+        "#5E5E5E",
+        "#6C6C6C",
+        "#7A7A7A",
+        "#888888",
+        "#969696",
+        "#A4A4A4",
+        "#B2B2B2",
+        "#C0C0C0",
+        "#6A6A6A"
+    ]
+
+    labels = ["Otros bachilleratos"]
+    parents = [""]
+    values = [total_externos]
+    ids = ["root_otros"]
+    colores = ["#303030"]
+    textos = [f"Otros<br>n={total_externos}"]
+
+    ids_escuelas = {}
+    totales_escuelas = {}
+
+    for indice, fila in resumen_escuelas.reset_index(drop=True).iterrows():
+
+        escuela = fila["Escuela_sunburst"]
+        aspirantes = int(fila["Aspirantes"])
+        porcentaje = aspirantes / total_externos * 100
+        id_escuela = f"escuela_{indice}"
+
+        ids_escuelas[escuela] = id_escuela
+        totales_escuelas[escuela] = aspirantes
+
+        labels.append(escuela)
+        parents.append("root_otros")
+        values.append(aspirantes)
+        ids.append(id_escuela)
+
+        colores.append(
+            tonos_gris[indice % len(tonos_gris)]
+        )
+
+        textos.append(
+            f"{escuela}<br>{porcentaje:.1f}%"
+        )
+
+    for indice, fila in resumen_carreras.reset_index(drop=True).iterrows():
+
+        carrera = fila["Carrera"]
+        escuela = fila["Escuela_sunburst"]
+        aspirantes = int(fila["Aspirantes"])
+
+        total_escuela = totales_escuelas[escuela]
+        porcentaje = aspirantes / total_escuela * 100
+
+        labels.append(carrera)
+        parents.append(ids_escuelas[escuela])
+        values.append(aspirantes)
+        ids.append(f"carrera_{indice}")
+
+        colores.append(
+            mapa_colores_carreras.get(carrera, "#9E9E9E")
+        )
+
+        textos.append(
+            f"{carrera}<br>{porcentaje:.1f}%"
+        )
+
+    fig = go.Figure(
+        go.Sunburst(
+            ids=ids,
+            labels=labels,
+            parents=parents,
+            values=values,
+            text=textos,
+            textinfo="text",
+            branchvalues="total",
+            marker=dict(
+                colors=colores,
+                line=dict(color="#111217", width=1)
+            ),
+            insidetextorientation="radial",
+            hovertemplate=(
+                "<b>%{label}</b><br>"
+                "Aspirantes: %{value}<br>"
+                "Participación: %{percentParent:.1%}"
+                "<extra></extra>"
+            )
+        )
+    )
+
+    fig.update_layout(
+        title="Otros bachilleratos → carreras elegidas",
+        height=560,
+        margin=dict(t=70, b=20, l=20, r=20)
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_historial():
+    st.title("🎓 Historial de Aspirantes")
+    st.caption(
+        "Análisis general y análisis por carrera de aspirantes de nuevo ingreso."
+    )
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Carga Historial")
+
+    archivo_subido = st.sidebar.file_uploader(
+        "Carga el archivo Excel de aspirantes",
+        type=["xlsx", "xls"],
+        key="hist_archivo"
+    )
+
+    if archivo_subido is None:
+        st.info("Carga un archivo Excel para iniciar el análisis.")
+        st.stop()
+
+    contenido_archivo = archivo_subido.getvalue()
+
+    with st.spinner("Leyendo e integrando hojas del archivo..."):
+        df_general, df_bitacora = hist_procesar_archivo_excel(
+            contenido_archivo
+        )
+
+    if df_general.empty:
+        st.error("No se pudieron identificar registros de aspirantes.")
+        st.dataframe(df_bitacora, use_container_width=True)
+        st.stop()
+
+    columna_sexo = util_encontrar_columna(
+        df_general,
+        ["Género", "Genero", "Sexo"]
+    )
+
+    if columna_sexo is not None:
+        df_general["Sexo_normalizado"] = df_general[columna_sexo].apply(
+            hist_normalizar_sexo
+        )
+    else:
+        df_general["Sexo_normalizado"] = "Sin especificar"
+
+    df_general["Rango_promedio"] = df_general[
+        "Promedio_normalizado_100"
+    ].apply(hist_clasificar_rango_promedio)
+
+    columna_escuela = util_encontrar_columna(
+        df_general,
+        [
+            "Escuela de Procedencia",
+            "Escuela Procedencia",
+            "Procedencia",
+            "Escuela"
+        ]
+    )
+
+    if columna_escuela is not None:
+
+        df_general["Bachillerato_procedencia"] = df_general[
+            columna_escuela
+        ].apply(hist_normalizar_escuela_procedencia)
+
+        df_general["Estado_procedencia"] = df_general[
+            columna_escuela
+        ].apply(hist_clasificar_estado_procedencia)
+
+    else:
+        df_general["Bachillerato_procedencia"] = "Sin dato"
+        df_general["Estado_procedencia"] = "Sin dato"
+
+    mapa_colores_carreras = hist_crear_mapa_colores_carreras(df_general)
+
+    seccion_activa = st.radio(
+        "Navegación",
+        [
+            "📊 Análisis general",
+            "🎓 Análisis por carrera"
+        ],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="hist_navegacion_principal"
+    )
+
+    if seccion_activa == "📊 Análisis general":
+
+        st.subheader("Análisis general de aspirantes")
+
+        total = len(df_general)
+        mujeres = df_general["Sexo_normalizado"].eq("Mujer").sum()
+        hombres = df_general["Sexo_normalizado"].eq("Hombre").sum()
+        sin_especificar = df_general["Sexo_normalizado"].eq(
+            "Sin especificar"
+        ).sum()
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        col1.metric("Aspirantes", f"{total:,}")
+        col2.metric("Mujeres", f"{mujeres:,}")
+        col3.metric("Hombres", f"{hombres:,}")
+        col4.metric("Sin especificar", f"{sin_especificar:,}")
+
+        st.markdown("### Distribución de calificaciones por sexo")
+        hist_mostrar_grafica_calificaciones(df_general)
+
+        st.markdown("### Estado de procedencia")
+        hist_mostrar_concentrado_estados(df_general)
+
+        st.markdown(
+            "## Distribución de calificaciones por bachillerato"
+        )
+        hist_mostrar_grafica_semaforo_bachillerato(df_general)
+
+        st.markdown("## Origen académico y carrera elegida")
+
+        col_udec, col_otros = st.columns(2)
+
+        with col_udec:
+            hist_mostrar_sunburst_udec(
+                df_general,
+                mapa_colores_carreras
+            )
+
+        with col_otros:
+            hist_mostrar_sunburst_otros_bachilleratos(
+                df_general,
+                mapa_colores_carreras,
+                top_n=10
+            )
+
+    elif seccion_activa == "🎓 Análisis por carrera":
+
+        st.subheader("Análisis por carrera")
+
+        carreras = sorted(
+            df_general["Carrera"]
+            .dropna()
+            .astype(str)
+            .unique()
+        )
+
+        carrera_seleccionada = st.selectbox(
+            "Selecciona una carrera",
+            options=carreras,
+            key="hist_selector_carrera"
+        )
+
+        df_carrera = df_general[
+            df_general["Carrera"] == carrera_seleccionada
+        ].copy()
+
+        st.markdown(f"## {carrera_seleccionada}")
+
+        total_carrera = len(df_carrera)
+        mujeres_carrera = df_carrera["Sexo_normalizado"].eq(
+            "Mujer"
+        ).sum()
+        hombres_carrera = df_carrera["Sexo_normalizado"].eq(
+            "Hombre"
+        ).sum()
+        sin_especificar_carrera = df_carrera["Sexo_normalizado"].eq(
+            "Sin especificar"
+        ).sum()
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        col1.metric("Aspirantes", f"{total_carrera:,}")
+        col2.metric("Mujeres", f"{mujeres_carrera:,}")
+        col3.metric("Hombres", f"{hombres_carrera:,}")
+        col4.metric(
+            "Sin especificar",
+            f"{sin_especificar_carrera:,}"
+        )
+
+        st.markdown("### Distribución de calificaciones por sexo")
+        hist_mostrar_grafica_calificaciones(df_carrera)
+
+        st.markdown("### Estado de procedencia")
+        hist_mostrar_concentrado_estados(df_carrera)
+
+        st.markdown(
+            "## Distribución de calificaciones por bachillerato"
+        )
+        hist_mostrar_grafica_semaforo_bachillerato(df_carrera)
+
+
+# ============================================================
+# MÓDULO 3: PERFIL INDIVIDUAL
+# ============================================================
+
+def render_perfil_individual():
+    st.title("👤 Perfil individual")
+    st.caption("Próxima fase: cruce por nombre entre EVALUATEC e Historial de Aspirantes.")
+
+    st.info(
+        "Esta sección ya queda preparada para el siguiente paso. "
+        "Aquí vamos a cargar ambas bases, homologar nombres y construir "
+        "el perfil integral por estudiante."
+    )
+
+    st.markdown(
+        """
+        ### Lo que integraremos aquí
+        
+        - Datos generales del aspirante.
+        - Carrera seleccionada.
+        - Promedio de bachillerato.
+        - Escuela y estado de procedencia.
+        - Resultados EVALUATEC.
+        - Áreas fuertes.
+        - Áreas prioritarias.
+        - Diagnóstico individual.
+        - Recomendaciones de nivelación.
+        """
+    )
+
+
+# ============================================================
+# RENDER PRINCIPAL
+# ============================================================
+
+if modulo_activo == "📘 EVALUATEC 2026":
+    render_evaluatec()
+
+elif modulo_activo == "🎓 Historial de Aspirantes":
+    render_historial()
+
+elif modulo_activo == "👤 Perfil individual":
+    render_perfil_individual()
