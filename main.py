@@ -2920,15 +2920,36 @@ def chaside_render_reporte_ejecutivo_solo_link():
         axis=1
     )
 
+    carreras_disponibles = sorted(
+        df_selector[CHASIDE_COLUMNA_CARRERA]
+        .dropna()
+        .astype(str)
+        .unique()
+    )
+
+    if not carreras_disponibles:
+        st.warning("No hay carreras disponibles para mostrar.")
+        return
+
+    carrera_seleccionada = st.selectbox(
+        "Selecciona carrera",
+        options=carreras_disponibles,
+        key="chaside_selector_carrera_solo_link"
+    )
+
+    df_selector_carrera = df_selector[
+        df_selector[CHASIDE_COLUMNA_CARRERA].astype(str) == carrera_seleccionada
+    ].copy()
+
     opciones = sorted(
-        df_selector["Etiqueta"]
+        df_selector_carrera["Etiqueta"]
         .dropna()
         .astype(str)
         .unique()
     )
 
     if not opciones:
-        st.warning("No hay estudiantes disponibles para mostrar.")
+        st.warning("No hay estudiantes disponibles para esta carrera.")
         return
 
     seleccion = st.selectbox(
@@ -2937,10 +2958,10 @@ def chaside_render_reporte_ejecutivo_solo_link():
         key="chaside_selector_estudiante_solo_link"
     )
 
-    fila = df_selector[
-        df_selector["Etiqueta"] == seleccion
+    fila = df_selector_carrera[
+        df_selector_carrera["Etiqueta"] == seleccion
     ].iloc[0]
-
+    
     fondo, borde, titulo = chaside_color_semaforo(
         fila["Semáforo vocacional"]
     )
