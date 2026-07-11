@@ -2306,9 +2306,9 @@ def render_historial():
         df_general["Bachillerato_procedencia_original"] = "Sin dato"
         df_general["Bachillerato_procedencia"] = "Sin dato"
         df_general["Estado_procedencia"] = "Sin dato"
-    
+
     mapa_colores_carreras = hist_crear_mapa_colores_carreras(df_general)
-    
+
     seccion_activa = st.radio(
         "Navegación",
         [
@@ -2319,7 +2319,6 @@ def render_historial():
         label_visibility="collapsed",
         key="hist_navegacion_principal"
     )
-
     if seccion_activa == "📊 Análisis general":
 
         st.subheader("Análisis general de aspirantes")
