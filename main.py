@@ -5166,77 +5166,50 @@ def chaside_procesar_respuestas(
         axis=1
     )
 
-    df_intensidad = df[
-        df["Semáforo vocacional"].isin(["Verde", "Amarillo"])
-    ].copy()
+    # ------------------------------------------------------------
+    # Nivel de intensidad vocacional
+    # ------------------------------------------------------------
 
-    df["Nivel de intensidad"] = np.nan
+    df["Nivel de intensidad"] = "Sin nivel definido"
 
-    def asignar_intensidad_por_carrera(grupo):
-        grupo = grupo.copy()
-        grupo["Nivel de intensidad"] = pd.Series(
-            index=grupo.index,
-            dtype="object"
-        )
+    for carrera, grupo in df.groupby(CHASIDE_COLUMNA_CARRERA):
 
-        amarillos = grupo[
+        indices_amarillos = grupo[
             grupo["Semáforo vocacional"] == "Amarillo"
-        ].sort_values("Score_CHASIDE", ascending=True).copy()
+        ].sort_values(
+            "Score_CHASIDE",
+            ascending=True
+        ).index.tolist()
 
-        verdes = grupo[
+        indices_verdes = grupo[
             grupo["Semáforo vocacional"] == "Verde"
-        ].sort_values("Score_CHASIDE", ascending=True).copy()
+        ].sort_values(
+            "Score_CHASIDE",
+            ascending=True
+        ).index.tolist()
 
-        if not amarillos.empty:
-            amarillos["rank_pct"] = (
-                np.arange(len(amarillos)) + 1
-            ) / len(amarillos)
+        if len(indices_amarillos) > 0:
+            total_amarillos = len(indices_amarillos)
 
-            amarillos["Nivel de intensidad"] = np.where(
-                amarillos["rank_pct"] <= 0.25,
-                "Sin perfil",
-                "Perfil en riesgo"
-            )
+            for posicion, indice in enumerate(indices_amarillos, start=1):
+                rank_pct = posicion / total_amarillos
 
-            grupo.loc[
-                amarillos.index,
-                "Nivel de intensidad"
-            ] = amarillos["Nivel de intensidad"]
+                if rank_pct <= 0.25:
+                    df.loc[indice, "Nivel de intensidad"] = "Sin perfil"
+                else:
+                    df.loc[indice, "Nivel de intensidad"] = "Perfil en riesgo"
 
-        if not verdes.empty:
-            verdes["rank_pct"] = (
-                np.arange(len(verdes)) + 1
-            ) / len(verdes)
+        if len(indices_verdes) > 0:
+            total_verdes = len(indices_verdes)
 
-            verdes["Nivel de intensidad"] = np.where(
-                verdes["rank_pct"] > 0.75,
-                "Joven promesa",
-                "Perfil en transición"
-            )
+            for posicion, indice in enumerate(indices_verdes, start=1):
+                rank_pct = posicion / total_verdes
 
-            grupo.loc[
-                verdes.index,
-                "Nivel de intensidad"
-            ] = verdes["Nivel de intensidad"]
-
-        return grupo
-
-    if not df_intensidad.empty:
-        df_intensidad = (
-            df_intensidad
-            .groupby(CHASIDE_COLUMNA_CARRERA, group_keys=False)
-            .apply(asignar_intensidad_por_carrera)
-            .copy()
-        )
-
-        df.loc[
-            df_intensidad.index,
-            "Nivel de intensidad"
-        ] = df_intensidad["Nivel de intensidad"]
-
-    return df
-
-def chaside_render_reporte_ejecutivo(df_general):
+                if rank_pct > 0.75:
+                    df.loc[indice, "Nivel de intensidad"] = "Joven promesa"
+                else:
+                    df.loc[indice, "Nivel de intensidad"] = "Perfil en transición"
+chaside_render_reporte_ejecutivo(df_general):
     """Renderiza el reporte ejecutivo CHASIDE usando el historial ya cargado."""
 
     st.markdown("## Reporte ejecutivo CHASIDE")
