@@ -4539,6 +4539,49 @@ def perfil_score_nombre_tokens(nombre_a, nombre_b):
     ).ratio()
 
     return max(score_tokens, score_texto)
+def perfil_interpretar_intensidad_chaside(nivel):
+    """Interpreta el nivel de intensidad CHASIDE para el dictamen tutorial."""
+
+    if pd.isna(nivel):
+        return "no se cuenta con un nivel de intensidad definido"
+
+    nivel = str(nivel).strip()
+
+    if nivel == "Joven promesa":
+        return (
+            "se interpreta como un perfil con alta congruencia vocacional, "
+            "por lo que se espera mejor adaptación académica, mayor claridad en su elección "
+            "y potencial para aprovechar actividades de alto desempeño"
+        )
+
+    if nivel == "Perfil en transición":
+        return (
+            "se interpreta como un perfil funcional, aunque todavía en proceso de consolidación; "
+            "podría presentar algunas dificultades de adaptación o acreditación en ciertas asignaturas "
+            "durante su formación académica, por lo que se recomienda acompañamiento preventivo"
+        )
+
+    if nivel == "Perfil en riesgo":
+        return (
+            "se interpreta como una coincidencia vocacional baja; puede requerir seguimiento tutorial "
+            "más cercano para prevenir desmotivación, bajo desempeño o dudas sobre la carrera elegida"
+        )
+
+    if nivel == "Sin perfil":
+        return (
+            "se interpreta como baja correspondencia entre la carrera elegida y el perfil vocacional detectado; "
+            "se recomienda orientación vocacional complementaria y seguimiento individual"
+        )
+
+    if nivel == "Sin nivel definido":
+        return (
+            "no permite establecer una intensidad vocacional clara, por lo que se sugiere interpretar "
+            "el resultado con cautela"
+        )
+
+    return (
+        "requiere interpretación complementaria por parte del tutor o responsable académico"
+    )
     
 def render_perfil_individual():
     st.title("👤 Perfil individual del aspirante")
@@ -4706,6 +4749,11 @@ def render_perfil_individual():
 
     estado = perfil_valor(fila, "hist_Estado_procedencia")
     matricula = perfil_valor(fila, "hist_ID_aspirante")
+    
+    dictamen_chaside = (
+        "No se encontró registro CHASIDE para este aspirante. "
+        "Se recomienda solicitarle responder la escala para complementar el dictamen tutorial."
+    )
     # ------------------------------------------------------------
     # Resultados CHASIDE dentro del perfil individual
     # ------------------------------------------------------------
@@ -4955,6 +5003,62 @@ def render_perfil_individual():
                 f"Coincidencia CHASIDE encontrada por: {metodo_match} "
                 f"| Score nombre: {fila_chaside['Score_nombre']:.2f}"
             )
+            semaforo_chaside = fila_chaside["Semáforo vocacional"]
+            diagnostico_chaside = fila_chaside["Diagnóstico vocacional"]
+            nivel_chaside = fila_chaside["Nivel de intensidad"]
+            carrera_mejor_chaside = fila_chaside["Carrera_Mejor_Perfilada"]
+            carrera_respondida_chaside = fila_chaside[CHASIDE_COLUMNA_CARRERA]
+
+            interpretacion_intensidad = perfil_interpretar_intensidad_chaside(
+                nivel_chaside
+            )
+
+            if semaforo_chaside == "Verde":
+                texto_adecuacion = (
+                    "lo que indica un perfil vocacional adecuado para la carrera elegida"
+                )
+
+            elif semaforo_chaside == "Amarillo":
+                texto_adecuacion = (
+                    "lo que indica un perfil vocacional parcialmente adecuado, "
+                    "por lo que conviene dar seguimiento preventivo"
+                )
+
+            elif semaforo_chaside == "Rojo":
+                texto_adecuacion = (
+                    "lo que indica un perfil vocacional no adecuado para la carrera elegida"
+                )
+
+            elif semaforo_chaside == "Respondió siempre igual":
+                texto_adecuacion = (
+                    "aunque el patrón de respuesta sugiere baja confiabilidad, "
+                    "por lo que debe interpretarse con cautela"
+                )
+
+            else:
+                texto_adecuacion = (
+                    "por lo que se recomienda interpretar el resultado con apoyo tutorial"
+                )
+
+            if diagnostico_chaside == "Perfil adecuado":
+                texto_carrera_mejor = (
+                    f"La carrera respondida en CHASIDE fue <b>{carrera_respondida_chaside}</b>, "
+                    "y el resultado mantiene correspondencia con dicha elección."
+                )
+            else:
+                texto_carrera_mejor = (
+                    f"La carrera respondida en CHASIDE fue <b>{carrera_respondida_chaside}</b>; "
+                    f"sin embargo, el perfil sugiere mayor afinidad hacia "
+                    f"<b>{carrera_mejor_chaside}</b>."
+                )
+
+            dictamen_chaside = (
+                f"La estudiante sí contestó la escala CHASIDE, donde se detectó un perfil "
+                f"<b>{semaforo_chaside}</b> ({diagnostico_chaside}), {texto_adecuacion}. "
+                f"{texto_carrera_mejor} "
+                f"Por otro lado, el nivel de intensidad se detectó como "
+                f"<b>{nivel_chaside}</b>, lo cual {interpretacion_intensidad}."
+            )
             
             st.markdown("### Recomendación docente CHASIDE")
 
@@ -5109,7 +5213,13 @@ def render_perfil_individual():
         resultado_global=resultado_global,
         tabla_contexto=tabla_contexto
     )
-
+    dictamen_tutoria.append(
+        (
+            "Resultado vocacional CHASIDE",
+            dictamen_chaside
+        )
+    )
+    
     configuracion = perfil_configuracion_alerta_tutoria(
         nivel_alerta
     )
