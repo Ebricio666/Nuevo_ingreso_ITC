@@ -4840,12 +4840,14 @@ def render_perfil_individual():
                 use_container_width=True,
                 hide_index=True
             )
-    except Exception as error:
+     except Exception as error:
         st.warning(
             "No fue posible consultar CHASIDE para este aspirante. "
             "Solicita al estudiante realizar la escala en el siguiente enlace: "
             "https://forms.gle/7WM7sJXhiGAgh2BH6"
         )
+
+    st.markdown("## Información general del aspirante")
 
     col_info, col_validacion = st.columns([2, 1])
 
@@ -4879,40 +4881,8 @@ def render_perfil_individual():
             "Nivelación sugerida",
             perfil_clasificar_nivelacion(promedio_eval)
         )
-       col_info, col_validacion = st.columns([2, 1])
-    with col_info:
-        st.markdown(f"### {nombre}")
-        st.write(f"**Matrícula/ID:** {matricula}")
-        st.write(f"**Sexo:** {sexo}")
-        st.write(f"**Carrera en Historial:** {carrera_historial}")
-        st.write(f"**Carrera en EVALUATEC:** {carrera_eval}")
-        st.write(f"**Escuela de procedencia:** {escuela}")
-        st.write(f"**Estado de procedencia:** {estado}")
-
-    with col_validacion:
-        if estatus_cruce != "Coincide en ambas bases":
-            st.metric(
-                "Estatus del cruce",
-                estatus_cruce
-            )
-
-        st.metric(
-            "Promedio bachillerato",
-            perfil_formato_porcentaje(promedio_bach)
-        )
-
-        st.metric(
-            "Promedio EVALUATEC",
-            perfil_formato_porcentaje(promedio_eval)
-        )
-
-        st.metric(
-            "Nivelación sugerida",
-            perfil_clasificar_nivelacion(promedio_eval)
-        )
 
     tabla_areas = perfil_obtener_areas_individuales(fila)
-
     st.markdown("## Resultados EVALUATEC")
 
     perfil_mostrar_resultados_evaluatec_individual(tabla_areas)
