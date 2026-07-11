@@ -2288,21 +2288,23 @@ def render_historial():
             "Escuela"
         ]
     )
+if columna_escuela is not None:
+    df_historial["Bachillerato_procedencia_original"] = df_historial[
+        columna_escuela
+    ].fillna("Sin dato").astype(str)
 
-    if columna_escuela is not None:
-
-        df_general["Bachillerato_procedencia"] = df_general[
-            columna_escuela
-        ].apply(hist_normalizar_escuela_procedencia)
-
+    df_historial["Bachillerato_procedencia"] = df_historial[
+        columna_escuela
+    ].apply(hist_normalizar_escuela_procedencia)
+    
         df_general["Estado_procedencia"] = df_general[
             columna_escuela
         ].apply(hist_clasificar_estado_procedencia)
 
-    else:
-        df_general["Bachillerato_procedencia"] = "Sin dato"
-        df_general["Estado_procedencia"] = "Sin dato"
-
+else:
+    df_historial["Bachillerato_procedencia_original"] = "Sin dato"
+    df_historial["Bachillerato_procedencia"] = "Sin dato"
+    df_historial["Estado_procedencia"] = "Sin dato"
     mapa_colores_carreras = hist_crear_mapa_colores_carreras(df_general)
 
     seccion_activa = st.radio(
@@ -3508,7 +3510,8 @@ def perfil_generar_dictamen_tutoria(
 
     escuela = perfil_valor(
         fila,
-        "hist_Bachillerato_procedencia"
+        "hist_Bachillerato_procedencia_original",
+        perfil_valor(fila, "hist_Bachillerato_procedencia")
     )
 
     estado = perfil_valor(
@@ -3567,9 +3570,12 @@ def perfil_generar_dictamen_tutoria(
         acciones["Corrección"]
     )
 
+    # ------------------------------------------------------------
+    # Dimensiones EVALUATEC comparadas contra pares
+    # ------------------------------------------------------------
+
     if tabla_contexto.empty:
         texto_oportunidad = "Validar manualmente los resultados del estudiante."
-        texto_fortalezas = "Sin información suficiente."
         texto_dimensiones = (
             "No se cuenta con información suficiente para comparar "
             "las dimensiones del EVALUATEC."
@@ -3582,49 +3588,96 @@ def perfil_generar_dictamen_tutoria(
         )
 
         areas_oportunidad = tabla_ordenada.head(2)
-
         areas_fuertes = tabla_ordenada.tail(2).sort_values(
             "Resultado",
             ascending=False
         )
 
-        texto_oportunidad = ", ".join(
-            [
-                f"{fila_area['Dimensión']} ({fila_area['Resultado']:.1f}%)"
-                for _, fila_area in areas_oportunidad.iterrows()
-            ]
-        )
+        textos_fuertes = []
 
-        texto_fortalezas = ", ".join(
-            [
-                f"{fila_area['Dimensión']} ({fila_area['Resultado']:.1f}%)"
-                for _, fila_area in areas_fuertes.iterrows()
-            ]
-        )
+        for _, fila_area in areas_fuertes.iterrows():
+            codigo = fila_area.get("Código", None)
+            dimension = fila_area["Dimensión"]
+            resultado = fila_area["Resultado"]
+
+            columna_grupo = None
+
+            for codigo_eval, etiqueta_eval in EVAL_ETIQUETAS_AREAS.items():
+                if etiqueta_eval == dimension:
+                    columna_grupo = f"Area_{codigo_eval}"
+                    break
+
+            if columna_grupo is not None and columna_grupo in grupo_referencia.columns:
+                promedio_grupo_area = grupo_referencia[columna_grupo].mean()
+                comparativo_area = perfil_texto_comparativo(
+                    resultado,
+                    promedio_grupo_area
+                )
+
+                textos_fuertes.append(
+                    f"<b>{dimension}</b> ({resultado:.1f}%), {comparativo_area} "
+                    f"(<b>{perfil_formato_porcentaje(promedio_grupo_area)}</b>)"
+                )
+            else:
+                textos_fuertes.append(
+                    f"<b>{dimension}</b> ({resultado:.1f}%)"
+                )
+
+        textos_oportunidad = []
+
+        for _, fila_area in areas_oportunidad.iterrows():
+            dimension = fila_area["Dimensión"]
+            resultado = fila_area["Resultado"]
+
+            columna_grupo = None
+
+            for codigo_eval, etiqueta_eval in EVAL_ETIQUETAS_AREAS.items():
+                if etiqueta_eval == dimension:
+                    columna_grupo = f"Area_{codigo_eval}"
+                    break
+
+            if columna_grupo is not None and columna_grupo in grupo_referencia.columns:
+                promedio_grupo_area = grupo_referencia[columna_grupo].mean()
+                comparativo_area = perfil_texto_comparativo(
+                    resultado,
+                    promedio_grupo_area
+                )
+
+                textos_oportunidad.append(
+                    f"<b>{dimension}</b> ({resultado:.1f}%), {comparativo_area} "
+                    f"(<b>{perfil_formato_porcentaje(promedio_grupo_area)}</b>)"
+                )
+            else:
+                textos_oportunidad.append(
+                    f"<b>{dimension}</b> ({resultado:.1f}%)"
+                )
+
+        texto_fortalezas = "; ".join(textos_fuertes)
+        texto_oportunidad = "; ".join(textos_oportunidad)
 
         texto_dimensiones = (
-            f"Las áreas con mejor desempeño fueron **{texto_fortalezas}**. "
-            f"Las áreas de oportunidad principales fueron **{texto_oportunidad}**."
+            f"Las áreas con mejor desempeño fueron {texto_fortalezas}. "
+            f"Las áreas de oportunidad principales fueron {texto_oportunidad}."
         )
 
     puntos = [
         (
             "Nombre y procedencia",
             (
-                f"{nombre} proviene de **{escuela}**, con procedencia registrada en "
-                f"**{estado}**. Su promedio de bachillerato es "
-                f"**{perfil_formato_porcentaje(promedio_bach)}**, el cual es "
+                f"{nombre} proviene de <b>{escuela}</b>, con procedencia registrada en "
+                f"<b>{estado}</b>. Su promedio de bachillerato es "
+                f"<b>{perfil_formato_porcentaje(promedio_bach)}</b>, el cual es "
                 f"{comparativo_bach} del grupo de referencia "
-                f"(**{perfil_formato_porcentaje(promedio_bach_grupo)}**)."
+                f"(<b>{perfil_formato_porcentaje(promedio_bach_grupo)}</b>)."
             )
         ),
         (
             "Resultado global EVALUATEC",
             (
                 f"Obtuvo una calificación global de "
-                f"**{perfil_formato_porcentaje(promedio_eval)}**. Este resultado es "
+                f"<b>{perfil_formato_porcentaje(promedio_eval)}</b>. Este resultado es "
                 f"{comparativo_eval} respecto al promedio de sus compañeros "
-                f"(**{perfil_formato_porcentaje(promedio_eval_grupo)}**)."
+                f"(<b>{perfil_formato_porcentaje(promedio_eval_grupo)}</b>)."
             )
         ),
         (
@@ -3635,7 +3688,7 @@ def perfil_generar_dictamen_tutoria(
             "Seguimiento y acompañamiento",
             (
                 f"Se recomienda implementar acciones en las áreas de oportunidad "
-                f"identificadas, especialmente en **{texto_oportunidad}**. "
+                f"identificadas, especialmente en {texto_oportunidad}. "
                 f"Como acciones preventivas y correctivas se sugiere: "
                 f"{acciones_prevencion} {acciones_correccion}"
             )
@@ -3643,7 +3696,6 @@ def perfil_generar_dictamen_tutoria(
     ]
 
     return nivel_alerta, puntos
-
 
 def render_perfil_individual():
     st.title("👤 Perfil individual del aspirante")
@@ -3846,8 +3898,12 @@ def render_perfil_individual():
     )
 
     sexo = perfil_valor(fila, "hist_Sexo_normalizado")
-    escuela = perfil_valor(fila, "hist_Bachillerato_procedencia")
-    estado = perfil_valor(fila, "hist_Estado_procedencia")
+escuela = perfil_valor(
+    fila,
+    "hist_Bachillerato_procedencia_original",
+    perfil_valor(fila, "hist_Bachillerato_procedencia")
+)
+estado = perfil_valor(fila, "hist_Estado_procedencia")
     matricula = perfil_valor(fila, "hist_ID_aspirante")
 
     col_info, col_validacion = st.columns([2, 1])
