@@ -2644,19 +2644,24 @@ def perfil_preparar_historial(contenido_archivo):
             "Escuela"
         ]
     )
-
     if columna_escuela is not None:
-        df_historial["Bachillerato_procedencia"] = df_historial[
+
+        df_general["Bachillerato_procedencia_original"] = df_general[
+            columna_escuela
+        ].fillna("Sin dato").astype(str)
+
+        df_general["Bachillerato_procedencia"] = df_general[
             columna_escuela
         ].apply(hist_normalizar_escuela_procedencia)
 
-        df_historial["Estado_procedencia"] = df_historial[
+        df_general["Estado_procedencia"] = df_general[
             columna_escuela
         ].apply(hist_clasificar_estado_procedencia)
-    else:
-        df_historial["Bachillerato_procedencia"] = "Sin dato"
-        df_historial["Estado_procedencia"] = "Sin dato"
 
+    else:
+        df_general["Bachillerato_procedencia_original"] = "Sin dato"
+        df_general["Bachillerato_procedencia"] = "Sin dato"
+        df_general["Estado_procedencia"] = "Sin dato"
     return df_historial, df_bitacora
 
 
