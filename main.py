@@ -2803,13 +2803,14 @@ def chaside_render_reporte_ejecutivo_solo_link():
         st.error(f"No fue posible procesar CHASIDE: {error}")
         return
 
+    total_chaside = int(df_chaside.shape[0])
+
     st.success(
-        f"CHASIDE procesado correctamente: {len(df_chaside):,} respuestas."
+        f"CHASIDE procesado correctamente: {total_chaside} respuestas."
     )
-
+    
     col1, col2, col3 = st.columns(3)
-
-    col1.metric("Respuestas", f"{len(df_chaside):,}")
+    col1.metric("Respuestas", total_chaside)
     col2.metric(
         "Perfil adecuado",
         int((df_chaside["Semáforo vocacional"] == "Verde").sum())
