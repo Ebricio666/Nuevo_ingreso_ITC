@@ -4847,6 +4847,7 @@ def render_perfil_individual():
             "Solicita al estudiante realizar la escala en el siguiente enlace: "
             "https://forms.gle/7WM7sJXhiGAgh2BH6"
         )
+       col_info, col_validacion = st.columns([2, 1])
     with col_info:
         st.markdown(f"### {nombre}")
         st.write(f"**Matrícula/ID:** {matricula}")
