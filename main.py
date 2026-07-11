@@ -4903,7 +4903,7 @@ def render_perfil_individual():
 def chaside_transformar_url_google_sheets(url):
     """
     Convierte una URL editable de Google Sheets a una URL CSV descargable.
-    Soporta enlaces con gid y resourcekey.
+    Usa por defecto el gid de la pestaña de respuestas CHASIDE.
     """
 
     url = str(url).strip()
@@ -4916,18 +4916,21 @@ def chaside_transformar_url_google_sheets(url):
 
     try:
         file_id = url.split("/d/")[1].split("/")[0]
-gid = "1491376423"
-file_id = url.split("/d/")[1].split("/")[0]
 
-gid = "1491376423"
+        gid = "1491376423"
 
-if "gid=" in url:
-    gid = url.split("gid=")[-1].split("&")[0].split("#")[0]
+        if "gid=" in url:
+            gid = url.split("gid=")[-1].split("&")[0].split("#")[0]
 
-url_csv = (
-    f"https://docs.google.com/spreadsheets/d/"
-    f"{file_id}/export?format=csv&gid={gid}"
-)
+        resourcekey = ""
+
+        if "resourcekey=" in url:
+            resourcekey = url.split("resourcekey=")[-1].split("&")[0].split("#")[0]
+
+        url_csv = (
+            f"https://docs.google.com/spreadsheets/d/"
+            f"{file_id}/export?format=csv&gid={gid}"
+        )
 
         if resourcekey != "":
             url_csv = f"{url_csv}&resourcekey={resourcekey}"
