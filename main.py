@@ -2540,6 +2540,7 @@ def perfil_encontrar_nombre_evaluatec(df):
 
     return util_encontrar_columna(df, posibles_columnas)
 
+
 def perfil_preparar_historial(contenido_archivo):
     """Procesa Historial y prepara nombre, carrera y datos generales."""
 
@@ -2560,7 +2561,6 @@ def perfil_preparar_historial(contenido_archivo):
         )
         return pd.DataFrame(), df_bitacora
 
-    # Construir nombre completo visible
     if col_apellido_materno is None:
         df_historial["Nombre_completo_visible"] = (
             df_historial[col_apellido_paterno].fillna("").astype(str)
@@ -2655,7 +2655,8 @@ def perfil_preparar_historial(contenido_archivo):
         df_historial["Bachillerato_procedencia"] = "Sin dato"
         df_historial["Estado_procedencia"] = "Sin dato"
 
-    return df_historial, df_bitacora     
+    return df_historial, df_bitacora
+
 
 def perfil_preparar_evaluatec(archivos_subidos):
     """Procesa los 3 CSV de EVALUATEC y prepara nombre normalizado."""
@@ -2713,32 +2714,120 @@ def perfil_preparar_evaluatec(archivos_subidos):
 
     return df_evaluatec, errores
 
-def crear_etiqueta_selector(fila):
-    nombre = fila["Nombre_visible"]
-    carrera = fila["Carrera_referencia"]
-    estatus = fila["Estatus_cruce"]
 
-    if estatus == "Coincide en ambas bases":
+def perfil_crear_base_cruzada(df_historial, df_evaluatec):
+    """Cruza Historial y EVALUATEC usando nombre como llave principal."""
+
+    hist = df_historial.copy()
+    eval_df = df_evaluatec.copy()
+
+    hist = hist.add_prefix("hist_")
+    eval_df = eval_df.add_prefix("eval_")
+
+    df_cruzado = hist.merge(
+        eval_df,
+        left_on="hist_Nombre_match",
+        right_on="eval_Nombre_match",
+        how="outer",
+        indicator=True
+    )
+
+    df_cruzado["Nombre_visible"] = df_cruzado[
+        "hist_Nombre_completo_visible"
+    ].combine_first(
+        df_cruzado["eval_Nombre_completo_visible"]
+    )
+
+    df_cruzado["Carrera_historial"] = df_cruzado[
+        "hist_Carrera"
+    ]
+
+    df_cruzado["Carrera_evaluatec"] = df_cruzado[
+        "eval_Carrera_normalizada"
+    ]
+
+    df_cruzado["Carrera_referencia"] = df_cruzado[
+        "Carrera_historial"
+    ].combine_first(
+        df_cruzado["Carrera_evaluatec"]
+    )
+
+    df_cruzado["Letra_apellido"] = df_cruzado[
+        "hist_Letra_apellido"
+    ]
+
+    df_cruzado["Letra_apellido"] = df_cruzado[
+        "Letra_apellido"
+    ].fillna(
+        df_cruzado["Nombre_visible"]
+        .fillna("")
+        .astype(str)
+        .str[:1]
+        .str.upper()
+    )
+
+    df_cruzado["Carrera_coincide"] = (
+        df_cruzado["hist_Carrera_match"]
+        == df_cruzado["eval_Carrera_match"]
+    )
+
+    df_cruzado["Estatus_cruce"] = np.select(
+        [
+            df_cruzado["_merge"] == "both",
+            df_cruzado["_merge"] == "left_only",
+            df_cruzado["_merge"] == "right_only"
+        ],
+        [
+            "Coincide en ambas bases",
+            "Solo en Historial",
+            "Solo en EVALUATEC"
+        ],
+        default="Sin clasificar"
+    )
+
+    df_cruzado.loc[
+        (
+            df_cruzado["_merge"] == "both"
+        )
+        &
+        (
+            df_cruzado["Carrera_coincide"] == False
+        ),
+        "Estatus_cruce"
+    ] = "Coincide por nombre, carrera distinta"
+
+    def crear_etiqueta_selector(fila):
+        nombre = fila["Nombre_visible"]
+        carrera = fila["Carrera_referencia"]
+        estatus = fila["Estatus_cruce"]
+
+        if pd.isna(nombre):
+            nombre = "Sin nombre"
+
+        if pd.isna(carrera):
+            carrera = "Sin carrera"
+
+        if estatus == "Coincide en ambas bases":
+            return f"{nombre} · {carrera}"
+
+        if estatus == "Coincide por nombre, carrera distinta":
+            return f"{nombre} · {carrera} · Validar carrera"
+
+        if estatus == "Solo en Historial":
+            return f"{nombre} · {carrera} · Solo Historial"
+
+        if estatus == "Solo en EVALUATEC":
+            return f"{nombre} · {carrera} · Solo EVALUATEC"
+
         return f"{nombre} · {carrera}"
 
-    if estatus == "Coincide por nombre, carrera distinta":
-        return f"{nombre} · {carrera} · Validar carrera"
-
-    if estatus == "Solo en Historial":
-        return f"{nombre} · {carrera} · Solo Historial"
-
-    if estatus == "Solo en EVALUATEC":
-        return f"{nombre} · {carrera} · Solo EVALUATEC"
-
-    return f"{nombre} · {carrera}"
-
-
-df_cruzado["Etiqueta_selector"] = df_cruzado.apply(
-    crear_etiqueta_selector,
-    axis=1
-)
+    df_cruzado["Etiqueta_selector"] = df_cruzado.apply(
+        crear_etiqueta_selector,
+        axis=1
+    )
 
     return df_cruzado
+
 
 def perfil_valor(fila, columna, default="Sin dato"):
     """Obtiene un valor seguro para mostrar."""
@@ -2808,143 +2897,64 @@ def perfil_clasificar_nivelacion(promedio):
     return "Fortalecimiento regular"
 
 
-def perfil_generar_diagnostico(fila, tabla_areas):
-    """Genera diagnóstico individual breve."""
-
-    nombre = perfil_valor(fila, "Nombre_visible")
-
-    promedio_eval = perfil_valor(
-        fila,
-        "eval_Promedio_global_individual",
-        np.nan
-    )
-
-    promedio_bach = perfil_valor(
-        fila,
-        "hist_Promedio_normalizado_100",
-        np.nan
-    )
-
-    estatus = perfil_valor(
-        fila,
-        "Estatus_cruce"
-    )
-
-    if not tabla_areas.empty:
-        tabla_ordenada = tabla_areas.sort_values(
-            "Resultado",
-            ascending=True
-        )
-
-        prioridades = tabla_ordenada.head(2)
-
-        fortalezas = tabla_ordenada.tail(2).sort_values(
-            "Resultado",
-            ascending=False
-        )
-
-        texto_prioridades = ", ".join(
-            [
-                f"{fila_area['Dimensión']} ({fila_area['Resultado']:.1f}%)"
-                for _, fila_area in prioridades.iterrows()
-            ]
-        )
-
-        texto_fortalezas = ", ".join(
-            [
-                f"{fila_area['Dimensión']} ({fila_area['Resultado']:.1f}%)"
-                for _, fila_area in fortalezas.iterrows()
-            ]
-        )
-    else:
-        texto_prioridades = "sin datos EVALUATEC suficientes"
-        texto_fortalezas = "sin datos EVALUATEC suficientes"
-
-    if pd.notna(promedio_eval):
-        nivelacion = perfil_clasificar_nivelacion(promedio_eval)
-        texto_eval = (
-            f"En EVALUATEC obtuvo un promedio global de "
-            f"**{promedio_eval:.1f}%**."
-        )
-    else:
-        nivelacion = "Sin dato"
-        texto_eval = "No se encontró resultado global de EVALUATEC."
-
-    if pd.notna(promedio_bach):
-        texto_bach = (
-            f"Su promedio de bachillerato registrado es "
-            f"**{promedio_bach:.1f}%**."
-        )
-    else:
-        texto_bach = "No se encontró promedio de bachillerato válido."
-
-    return (
-        f"**{nombre}** tiene estatus de cruce: **{estatus}**. "
-        f"{texto_bach} {texto_eval} "
-        f"Sus principales fortalezas son **{texto_fortalezas}**. "
-        f"Las áreas prioritarias de trabajo son **{texto_prioridades}**. "
-        f"Clasificación sugerida: **{nivelacion}**."
-    )
-
-
-def perfil_generar_recomendaciones(fila, tabla_areas):
-    """Genera recomendaciones individuales de nivelación."""
-
-    promedio_eval = perfil_valor(
-        fila,
-        "eval_Promedio_global_individual",
-        np.nan
-    )
-
-    if tabla_areas.empty:
-        return [
-            "Revisar manualmente el expediente porque no se localizaron resultados EVALUATEC.",
-            "Validar nombre y carrera para confirmar si existe diferencia de registro entre bases."
-        ]
-
-    prioridades = (
-        tabla_areas
-        .sort_values("Resultado", ascending=True)
-        .head(2)
-    )
-
-    recomendaciones = []
-
-    for _, area in prioridades.iterrows():
-        dimension = area["Dimensión"]
-        resultado = area["Resultado"]
-
-        if resultado < 50:
-            recomendaciones.append(
-                f"Priorizar nivelación en {dimension}, ya que el resultado fue {resultado:.1f}%."
-            )
-        elif resultado < 70:
-            recomendaciones.append(
-                f"Dar seguimiento en {dimension}; el resultado fue {resultado:.1f}% y puede fortalecerse."
-            )
-        else:
-            recomendaciones.append(
-                f"Mantener práctica de refuerzo en {dimension}; aunque no es crítica, puede consolidarse."
-            )
-
-    if pd.notna(promedio_eval) and promedio_eval < 50:
-        recomendaciones.append(
-            "Sugerir acompañamiento académico temprano durante las primeras semanas del semestre."
-        )
-    elif pd.notna(promedio_eval) and promedio_eval < 70:
-        recomendaciones.append(
-            "Sugerir seguimiento académico preventivo y actividades de reforzamiento."
-        )
-    else:
-        recomendaciones.append(
-            "Mantener monitoreo regular y orientar al estudiante hacia actividades de consolidación."
-        )
-
-    return recomendaciones
-
-
 def perfil_mostrar_resultados_evaluatec_individual(tabla_areas):
     """Muestra gráfica individual de áreas EVALUATEC."""
+
+    if tabla_areas.empty:
+        st.info("No hay resultados EVALUATEC para este aspirante.")
+        return
+
+    tabla = tabla_areas.sort_values(
+        "Resultado",
+        ascending=True
+    )
+
+    colores = []
+
+    for valor in tabla["Resultado"]:
+        if valor < 25:
+            colores.append(EVAL_COLORES_NIVELES["Bajo"])
+        elif valor < 50:
+            colores.append(EVAL_COLORES_NIVELES["Básico"])
+        elif valor < 75:
+            colores.append(EVAL_COLORES_NIVELES["Satisfactorio"])
+        else:
+            colores.append(EVAL_COLORES_NIVELES["Alto"])
+
+    fig = go.Figure(
+        go.Bar(
+            x=tabla["Resultado"],
+            y=tabla["Dimensión"],
+            orientation="h",
+            marker_color=colores,
+            text=[
+                f"{valor:.1f}%"
+                for valor in tabla["Resultado"]
+            ],
+            textposition="outside",
+            hovertemplate=(
+                "<b>%{y}</b><br>"
+                "Resultado: %{x:.1f}%"
+                "<extra></extra>"
+            )
+        )
+    )
+
+    fig.update_layout(
+        title="Resultados EVALUATEC por dimensión",
+        xaxis=dict(
+            title="Calificación obtenida",
+            range=[0, 100],
+            ticksuffix="%"
+        ),
+        yaxis_title="",
+        height=max(420, len(tabla) * 70),
+        margin=dict(t=70, b=40, l=230, r=60)
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
 def perfil_clasificar_por_cuartiles(valor, serie_referencia):
     """
     Clasifica al estudiante contra su grupo de referencia.
@@ -3137,7 +3147,6 @@ def perfil_mostrar_contexto_academico(resultado_global, tabla_contexto, grupo):
     )
 
     clasificacion = resultado_global["Clasificación"]
-
     tipo = perfil_color_clasificacion(clasificacion)
 
     mensaje = (
@@ -3305,60 +3314,7 @@ def perfil_mostrar_leyenda_acciones(acciones):
 
         for accion in acciones["Corrección"]:
             st.warning(accion)
-            
-    if tabla_areas.empty:
-        st.info("No hay resultados EVALUATEC para este aspirante.")
-        return
 
-    tabla = tabla_areas.sort_values(
-        "Resultado",
-        ascending=True
-    )
-
-    colores = []
-
-    for valor in tabla["Resultado"]:
-        if valor < 25:
-            colores.append(EVAL_COLORES_NIVELES["Bajo"])
-        elif valor < 50:
-            colores.append(EVAL_COLORES_NIVELES["Básico"])
-        elif valor < 75:
-            colores.append(EVAL_COLORES_NIVELES["Satisfactorio"])
-        else:
-            colores.append(EVAL_COLORES_NIVELES["Alto"])
-
-    fig = go.Figure(
-        go.Bar(
-            x=tabla["Resultado"],
-            y=tabla["Dimensión"],
-            orientation="h",
-            marker_color=colores,
-            text=[
-                f"{valor:.1f}%"
-                for valor in tabla["Resultado"]
-            ],
-            textposition="outside",
-            hovertemplate=(
-                "<b>%{y}</b><br>"
-                "Resultado: %{x:.1f}%"
-                "<extra></extra>"
-            )
-        )
-    )
-
-    fig.update_layout(
-        title="Resultados EVALUATEC por dimensión",
-        xaxis=dict(
-            title="Calificación obtenida",
-            range=[0, 100],
-            ticksuffix="%"
-        ),
-        yaxis_title="",
-        height=max(420, len(tabla) * 70),
-        margin=dict(t=70, b=40, l=230, r=60)
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
 
 def render_perfil_individual():
     st.title("👤 Perfil individual del aspirante")
@@ -3538,7 +3494,6 @@ def render_perfil_individual():
     )
 
     indice_original = opciones[opcion_seleccionada]
-
     fila = df_cruzado.loc[indice_original]
 
     st.markdown("---")
@@ -3576,17 +3531,18 @@ def render_perfil_individual():
         st.write(f"**Carrera en EVALUATEC:** {carrera_eval}")
         st.write(f"**Escuela de procedencia:** {escuela}")
         st.write(f"**Estado de procedencia:** {estado}")
-with col_validacion:
-    if estatus_cruce != "Coincide en ambas bases":
-        st.metric(
-            "Estatus del cruce",
-            estatus_cruce
-        )
 
-    st.metric(
-        "Promedio bachillerato",
-        perfil_formato_porcentaje(promedio_bach)
-    )
+    with col_validacion:
+        if estatus_cruce != "Coincide en ambas bases":
+            st.metric(
+                "Estatus del cruce",
+                estatus_cruce
+            )
+
+        st.metric(
+            "Promedio bachillerato",
+            perfil_formato_porcentaje(promedio_bach)
+        )
 
         st.metric(
             "Promedio EVALUATEC",
@@ -3635,29 +3591,28 @@ with col_validacion:
                     f"{area['Dimensión']}: {area['Resultado']:.1f}%"
                 )
 
-resultado_global, tabla_contexto, grupo_referencia = perfil_crear_contexto_academico(
-    fila=fila,
-    df_evaluatec=df_evaluatec,
-    tabla_areas=tabla_areas
-)
+    resultado_global, tabla_contexto, grupo_referencia = perfil_crear_contexto_academico(
+        fila=fila,
+        df_evaluatec=df_evaluatec,
+        tabla_areas=tabla_areas
+    )
 
-perfil_mostrar_contexto_academico(
-    resultado_global=resultado_global,
-    tabla_contexto=tabla_contexto,
-    grupo=grupo_referencia
-)
+    perfil_mostrar_contexto_academico(
+        resultado_global=resultado_global,
+        tabla_contexto=tabla_contexto,
+        grupo=grupo_referencia
+    )
 
-acciones = perfil_generar_acciones_acompanamiento(
-    resultado_global=resultado_global,
-    tabla_contexto=tabla_contexto
-)
+    acciones = perfil_generar_acciones_acompanamiento(
+        resultado_global=resultado_global,
+        tabla_contexto=tabla_contexto
+    )
 
-perfil_mostrar_leyenda_acciones(
-    acciones=acciones
-)
+    perfil_mostrar_leyenda_acciones(
+        acciones=acciones
+    )
 
-# ============================================================
-# RENDER PRINCIPAL
+
 # ============================================================
 
 if modulo_activo == "📘 EVALUATEC 2026":
