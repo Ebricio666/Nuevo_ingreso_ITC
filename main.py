@@ -4840,13 +4840,13 @@ def render_perfil_individual():
                 use_container_width=True,
                 hide_index=True
             )
-     except Exception as error:
+    except Exception as error:
         st.warning(
             "No fue posible consultar CHASIDE para este aspirante. "
             "Solicita al estudiante realizar la escala en el siguiente enlace: "
             "https://forms.gle/7WM7sJXhiGAgh2BH6"
         )
-
+        
     st.markdown("## Información general del aspirante")
 
     col_info, col_validacion = st.columns([2, 1])
