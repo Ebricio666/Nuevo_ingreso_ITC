@@ -2278,7 +2278,16 @@ def render_historial():
     df_general["Rango_promedio"] = df_general[
         "Promedio_normalizado_100"
     ].apply(hist_clasificar_rango_promedio)
-
+    columna_escuela = util_encontrar_columna(
+        df_general,
+        [
+            "Escuela de Procedencia",
+            "Escuela Procedencia",
+            "Procedencia",
+            "Escuela"
+        ]
+    )
+    
     if columna_escuela is not None:
 
         df_general["Bachillerato_procedencia_original"] = df_general[
@@ -3892,15 +3901,15 @@ def render_perfil_individual():
     )
 
     sexo = perfil_valor(fila, "hist_Sexo_normalizado")
-    
-    escuela = perfil_valor(
-    fila,
-    "hist_Bachillerato_procedencia_original",
-    perfil_valor(fila, "hist_Bachillerato_procedencia")
-)
-estado = perfil_valor(fila, "hist_Estado_procedencia")
-    matricula = perfil_valor(fila, "hist_ID_aspirante")
 
+    escuela = perfil_valor(
+        fila,
+        "hist_Bachillerato_procedencia_original",
+        perfil_valor(fila, "hist_Bachillerato_procedencia")
+    )
+
+    estado = perfil_valor(fila, "hist_Estado_procedencia")
+    matricula = perfil_valor(fila, "hist_ID_aspirante")
     col_info, col_validacion = st.columns([2, 1])
 
     with col_info:
