@@ -3295,25 +3295,289 @@ def perfil_generar_acciones_acompanamiento(resultado_global, tabla_contexto):
         "Corrección": acciones_correccion
     }
 
+def perfil_clasificar_alerta_tutoria(
+    promedio_bach,
+    promedio_eval,
+    resultado_global,
+    tabla_contexto
+):
+    """
+    Clasifica al estudiante en un semáforo tutorial.
+    """
 
-def perfil_mostrar_leyenda_acciones(acciones):
-    """Muestra leyenda de acciones preventivas y correctivas."""
+    clasificacion_global = resultado_global["Clasificación"]
 
-    st.markdown("## Leyenda de acompañamiento")
+    dimensiones_riesgo = 0
 
-    col_prevencion, col_correccion = st.columns(2)
+    if not tabla_contexto.empty:
+        dimensiones_riesgo = tabla_contexto[
+            tabla_contexto["Clasificación"].isin(
+                [
+                    "Perfil en alto riesgo de no acreditar el semestre",
+                    "Riesgo preventivo",
+                    "Seguimiento académico"
+                ]
+            )
+        ].shape[0]
 
-    with col_prevencion:
-        st.markdown("### Acciones de prevención")
+    if clasificacion_global == "Perfil en alto riesgo de no acreditar el semestre":
+        return "red_flag"
 
-        for accion in acciones["Prevención"]:
-            st.info(accion)
+    if pd.notna(promedio_eval) and promedio_eval < 45:
+        return "red_flag"
 
-    with col_correccion:
-        st.markdown("### Acciones de corrección")
+    if dimensiones_riesgo >= 3:
+        return "irregular"
 
-        for accion in acciones["Corrección"]:
-            st.warning(accion)
+    if clasificacion_global in ["Riesgo preventivo", "Seguimiento académico"]:
+        return "observacion"
+
+    if pd.notna(promedio_eval) and promedio_eval < 60:
+        return "observacion"
+
+    return "regular"
+
+
+def perfil_configuracion_alerta_tutoria(nivel_alerta):
+    """
+    Define color, título y estilo visual del dictamen.
+    """
+
+    configuraciones = {
+        "regular": {
+            "titulo": "Alumno regular",
+            "color_fondo": "#E8F5E9",
+            "color_borde": "#2E7D32",
+            "color_texto": "#1B5E20"
+        },
+        "observacion": {
+            "titulo": "Alumno en observación",
+            "color_fondo": "#FFFDE7",
+            "color_borde": "#FBC02D",
+            "color_texto": "#795548"
+        },
+        "irregular": {
+            "titulo": "Alumno irregular",
+            "color_fondo": "#FFF3E0",
+            "color_borde": "#F57C00",
+            "color_texto": "#E65100"
+        },
+        "red_flag": {
+            "titulo": "Red flag académico",
+            "color_fondo": "#FFEBEE",
+            "color_borde": "#C62828",
+            "color_texto": "#B71C1C"
+        }
+    }
+
+    return configuraciones.get(
+        nivel_alerta,
+        configuraciones["observacion"]
+    )
+
+
+def perfil_promedio_grupo_historial(fila, df_historial):
+    """
+    Obtiene promedio de bachillerato del grupo de referencia en historial.
+    Usa la carrera del historial cuando está disponible.
+    """
+
+    carrera_historial = perfil_valor(
+        fila,
+        "Carrera_historial",
+        ""
+    )
+
+    if carrera_historial != "":
+        grupo_historial = df_historial[
+            df_historial["Carrera"] == carrera_historial
+        ].copy()
+
+        if not grupo_historial.empty:
+            return grupo_historial[
+                "Promedio_normalizado_100"
+            ].mean()
+
+    return df_historial[
+        "Promedio_normalizado_100"
+    ].mean()
+
+
+def perfil_texto_comparativo(valor_estudiante, valor_grupo):
+    """
+    Redacta comparación simple entre estudiante y grupo.
+    """
+
+    if pd.isna(valor_estudiante) or pd.isna(valor_grupo):
+        return "sin información suficiente para realizar una comparación con sus pares"
+
+    diferencia = valor_estudiante - valor_grupo
+
+    if diferencia > 0:
+        return (
+            f"superior en {abs(diferencia):.1f} puntos porcentuales "
+            f"respecto a sus pares"
+        )
+
+    if diferencia < 0:
+        return (
+            f"inferior en {abs(diferencia):.1f} puntos porcentuales "
+            f"respecto a sus pares"
+        )
+
+    return "similar al promedio de sus pares"
+
+
+def perfil_describir_dimensiones(tabla_contexto):
+    """
+    Identifica dimensiones prioritarias y fortalezas.
+    """
+
+    if tabla_contexto.empty:
+        return {
+            "prioritarias": "no se identificaron dimensiones prioritarias por falta de información",
+            "fortalezas": "no se identificaron fortalezas por falta de información",
+            "texto_prioritarias": "",
+            "texto_fortalezas": ""
+        }
+
+    tabla_ordenada = tabla_contexto.sort_values(
+        "Resultado",
+        ascending=True
+    )
+
+    prioritarias = tabla_ordenada.head(2)
+    fortalezas = tabla_ordenada.tail(2).sort_values(
+        "Resultado",
+        ascending=False
+    )
+
+    texto_prioritarias = ", ".join(
+        [
+            f"{fila['Dimensión']} ({fila['Resultado']:.1f}%)"
+            for _, fila in prioritarias.iterrows()
+        ]
+    )
+
+    texto_fortalezas = ", ".join(
+        [
+            f"{fila['Dimensión']} ({fila['Resultado']:.1f}%)"
+            for _, fila in fortalezas.iterrows()
+        ]
+    )
+
+    dimension_mas_baja = prioritarias.iloc[0]
+    dimension_mas_fuerte = fortalezas.iloc[0]
+
+    descripcion_prioritaria = (
+        f"la dimensión con mayor necesidad de atención es "
+        f"**{dimension_mas_baja['Dimensión']}**, con un resultado de "
+        f"**{dimension_mas_baja['Resultado']:.1f}%**, ubicada como "
+        f"**{dimension_mas_baja['Clasificación']}**"
+    )
+
+    descripcion_fortaleza = (
+        f"mientras que la dimensión con mejor desempeño es "
+        f"**{dimension_mas_fuerte['Dimensión']}**, con "
+        f"**{dimension_mas_fuerte['Resultado']:.1f}%**, clasificada como "
+        f"**{dimension_mas_fuerte['Clasificación']}**"
+    )
+
+    return {
+        "prioritarias": texto_prioritarias,
+        "fortalezas": texto_fortalezas,
+        "texto_prioritarias": descripcion_prioritaria,
+        "texto_fortalezas": descripcion_fortaleza
+    }
+
+
+def perfil_generar_dictamen_tutoria(
+    fila,
+    df_historial,
+    grupo_referencia,
+    resultado_global,
+    tabla_contexto
+):
+    """
+    Genera texto descriptivo para tutoría.
+    """
+
+    nombre = perfil_valor(
+        fila,
+        "Nombre_visible"
+    )
+
+    promedio_bach = perfil_valor(
+        fila,
+        "hist_Promedio_normalizado_100",
+        np.nan
+    )
+
+    promedio_eval = perfil_valor(
+        fila,
+        "eval_Promedio_global_individual",
+        np.nan
+    )
+
+    promedio_bach_grupo = perfil_promedio_grupo_historial(
+        fila,
+        df_historial
+    )
+
+    promedio_eval_grupo = grupo_referencia[
+        "Promedio_global_individual"
+    ].mean()
+
+    comparativo_bach = perfil_texto_comparativo(
+        promedio_bach,
+        promedio_bach_grupo
+    )
+
+    comparativo_eval = perfil_texto_comparativo(
+        promedio_eval,
+        promedio_eval_grupo
+    )
+
+    dimensiones = perfil_describir_dimensiones(
+        tabla_contexto
+    )
+
+    nivel_alerta = perfil_clasificar_alerta_tutoria(
+        promedio_bach=promedio_bach,
+        promedio_eval=promedio_eval,
+        resultado_global=resultado_global,
+        tabla_contexto=tabla_contexto
+    )
+
+    acciones = perfil_generar_acciones_acompanamiento(
+        resultado_global=resultado_global,
+        tabla_contexto=tabla_contexto
+    )
+
+    acciones_prevencion = " ".join(
+        acciones["Prevención"]
+    )
+
+    acciones_correccion = " ".join(
+        acciones["Corrección"]
+    )
+
+    texto = (
+        f"El estudiante **{nombre}** cuenta con un promedio de bachillerato de "
+        f"**{perfil_formato_porcentaje(promedio_bach)}**, el cual es {comparativo_bach} "
+        f"del grupo de referencia "
+        f"(**{perfil_formato_porcentaje(promedio_bach_grupo)}**). "
+        f"En los resultados de EVALUATEC obtuvo una calificación global de "
+        f"**{perfil_formato_porcentaje(promedio_eval)}**, {comparativo_eval} "
+        f"(**{perfil_formato_porcentaje(promedio_eval_grupo)}**). "
+        f"Al evaluar las dimensiones de EVALUATEC, se observó que "
+        f"{dimensiones['texto_prioritarias']}; "
+        f"{dimensiones['texto_fortalezas']}. "
+        f"Por tanto, se recomienda implementar acciones de acompañamiento como: "
+        f"{acciones_prevencion} {acciones_correccion}"
+    )
+
+    return nivel_alerta, texto
 
 
 def render_perfil_individual():
@@ -3597,20 +3861,75 @@ def render_perfil_individual():
         tabla_areas=tabla_areas
     )
 
-    perfil_mostrar_contexto_academico(
-        resultado_global=resultado_global,
-        tabla_contexto=tabla_contexto,
-        grupo=grupo_referencia
-    )
-
-    acciones = perfil_generar_acciones_acompanamiento(
+    nivel_alerta, dictamen_tutoria = perfil_generar_dictamen_tutoria(
+        fila=fila,
+        df_historial=df_historial,
+        grupo_referencia=grupo_referencia,
         resultado_global=resultado_global,
         tabla_contexto=tabla_contexto
     )
 
-    perfil_mostrar_leyenda_acciones(
-        acciones=acciones
+    configuracion = perfil_configuracion_alerta_tutoria(
+        nivel_alerta
     )
+
+    st.markdown("## Dictamen tutorial")
+
+    st.markdown(
+        f"""
+        <div style="
+            background-color: {configuracion['color_fondo']};
+            border-left: 10px solid {configuracion['color_borde']};
+            padding: 24px 28px;
+            border-radius: 16px;
+            margin-top: 12px;
+            margin-bottom: 24px;
+            color: {configuracion['color_texto']};
+            font-size: 18px;
+            line-height: 1.65;
+        ">
+            <h3 style="
+                margin-top: 0;
+                margin-bottom: 12px;
+                color: {configuracion['color_texto']};
+            ">
+                {configuracion['titulo']}
+            </h3>
+            <p>{dictamen_tutoria}</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    if not tabla_contexto.empty:
+        st.markdown("### Detalle por dimensión")
+
+        tabla_vista = tabla_contexto[
+            [
+                "Dimensión",
+                "Resultado",
+                "Clasificación",
+                "Nivel"
+            ]
+        ].copy()
+
+        tabla_vista["Resultado"] = tabla_vista["Resultado"].apply(
+            lambda valor: f"{valor:.1f}%"
+        )
+
+        tabla_vista = tabla_vista.rename(
+            columns={
+                "Clasificación": "Lectura tutorial",
+                "Nivel": "Ubicación frente al grupo"
+            }
+        )
+
+        st.dataframe(
+            tabla_vista,
+            use_container_width=True,
+            hide_index=True
+        )
+
 
 
 # ============================================================
