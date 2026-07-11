@@ -2764,200 +2764,6 @@ def render_historial():
         )
         hist_mostrar_grafica_semaforo_bachillerato(df_carrera)
 
-def render_modulo_chaside_con_carga():
-    """Muestra CHASIDE únicamente desde el enlace de respuestas."""
-
-    st.title("🧭 Diagnóstico vocacional CHASIDE")
-    st.caption(
-        "Este módulo se alimenta directamente del enlace de respuestas de Google Forms / Google Sheets."
-    )
-
-    chaside_render_reporte_ejecutivo_solo_link()
-
-    """Reporte ejecutivo CHASIDE sin archivo de aspirantes."""
-
-    st.markdown("## Reporte ejecutivo CHASIDE")
-
-    url_chaside = st.text_input(
-        "Pega el enlace de respuestas de Google Forms / Google Sheets",
-        value="https://docs.google.com/spreadsheets/u/2/d/1YHMEb5hftOZfV-CMWoUsUgJh1xmsgTY3YYwAtq1dGQA/edit?resourcekey&gid=1491376423#gid=1491376423",
-        key="chaside_url_google_solo_link"
-    )
-
-    peso_intereses = st.slider(
-        "Peso de intereses",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.8,
-        step=0.1,
-        key="chaside_peso_intereses_solo_link"
-    )
-
-    peso_aptitudes = round(1 - peso_intereses, 2)
-
-    st.caption(
-        f"Pesos activos → Intereses: {peso_intereses:.1f} | "
-        f"Aptitudes: {peso_aptitudes:.1f}"
-    )
-    try:
-        with st.spinner("Cargando y procesando respuestas CHASIDE..."):
-
-            df_chaside_raw = chaside_cargar_respuestas(url_chaside)
-
-            resultado_chaside = chaside_procesar_respuestas(
-                df_chaside_raw,
-                peso_intereses=peso_intereses,
-                peso_aptitudes=peso_aptitudes
-            )
-
-            if isinstance(resultado_chaside, tuple):
-                df_chaside = resultado_chaside[0]
-            else:
-                df_chaside = resultado_chaside
-
-            if not isinstance(df_chaside, pd.DataFrame):
-                raise ValueError(
-                    "La función chaside_procesar_respuestas no regresó un DataFrame válido."
-                )
-
-    except Exception as error:
-        st.error(f"No fue posible procesar CHASIDE: {error}")
-        return
-    total_chaside = int(df_chaside.shape[0])
-
-    st.success(
-        f"CHASIDE procesado correctamente: {total_chaside} respuestas."
-    )
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Respuestas", total_chaside)
-    col2.metric(
-        "Perfil adecuado",
-        int((df_chaside["Semáforo vocacional"] == "Verde").sum())
-    )
-    col3.metric(
-        "Requiere revisión",
-        int((df_chaside["Semáforo vocacional"] != "Verde").sum())
-    )
-
-    st.markdown("## Reporte individual para docente")
-
-    df_selector = df_chaside.copy()
-
-    df_selector["Etiqueta"] = df_selector.apply(
-        lambda fila: (
-            f"{fila[CHASIDE_COLUMNA_NOMBRE]} · "
-            f"{fila[CHASIDE_COLUMNA_CARRERA]} · "
-            f"{fila['Semáforo vocacional']}"
-        ),
-        axis=1
-    )
-
-    opciones = sorted(
-        df_selector["Etiqueta"]
-        .dropna()
-        .astype(str)
-        .unique()
-    )
-
-    if not opciones:
-        st.warning("No hay estudiantes disponibles para mostrar.")
-        return
-
-    seleccion = st.selectbox(
-        "Selecciona estudiante",
-        options=opciones,
-        key="chaside_selector_estudiante_solo_link"
-    )
-
-    fila = df_selector[
-        df_selector["Etiqueta"] == seleccion
-    ].iloc[0]
-
-    fondo, borde, titulo = chaside_color_semaforo(
-        fila["Semáforo vocacional"]
-    )
-
-    recomendacion = chaside_recomendacion_ejecutiva_solo_link(fila)
-
-    st.markdown(
-        f"""
-        <div style="
-            background-color:{fondo};
-            border-left:10px solid {borde};
-            padding:20px 24px;
-            border-radius:16px;
-            color:#111111;
-            margin-bottom:16px;
-        ">
-            <h3 style="margin-top:0; color:#111111;">{titulo}</h3>
-            <p style="margin-bottom:0;">
-                <b>Diagnóstico:</b> {fila['Diagnóstico vocacional']}
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    col_a, col_b = st.columns(2)
-
-    with col_a:
-        st.markdown("### Identificación")
-        st.write(f"**Nombre:** {fila[CHASIDE_COLUMNA_NOMBRE]}")
-        st.write(f"**Carrera elegida:** {fila[CHASIDE_COLUMNA_CARRERA]}")
-
-        if CHASIDE_COLUMNA_EMAIL_1 in fila.index:
-            st.write(f"**Correo Google:** {fila[CHASIDE_COLUMNA_EMAIL_1]}")
-
-        if CHASIDE_COLUMNA_EMAIL_2 in fila.index:
-            st.write(f"**Correo escrito:** {fila[CHASIDE_COLUMNA_EMAIL_2]}")
-
-    with col_b:
-        st.markdown("### Perfil vocacional")
-        st.write(
-            f"**Área fuerte:** {fila['Area_Fuerte_Ponderada']} · "
-            f"{CHASIDE_AREAS_LONG.get(fila['Area_Fuerte_Ponderada'], '')}"
-        )
-        st.write(f"**Semáforo vocacional:** {fila['Semáforo vocacional']}")
-        st.write(f"**Nivel de intensidad:** {fila['Nivel de intensidad']}")
-        st.write(f"**Carrera mejor perfilada:** {fila['Carrera_Mejor_Perfilada']}")
-
-    st.markdown("### Recomendación docente")
-    st.info(recomendacion)
-
-    st.markdown("### Puntajes por área CHASIDE")
-
-    tabla_areas = []
-
-    for area in CHASIDE_AREAS:
-        tabla_areas.append({
-            "Área": area,
-            "Descripción": CHASIDE_AREAS_LONG[area],
-            "Intereses": fila[f"INTERES_{area}"],
-            "Aptitudes": fila[f"APTITUD_{area}"],
-            "Puntaje combinado": fila[f"PUNTAJE_COMBINADO_{area}"]
-        })
-
-    st.dataframe(
-        pd.DataFrame(tabla_areas).sort_values(
-            "Puntaje combinado",
-            ascending=False
-        ),
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.download_button(
-        label="⬇️ Descargar respuestas CHASIDE procesadas",
-        data=dataframe_a_excel_bytes({
-            "CHASIDE procesado": df_chaside
-        }),
-        file_name="chaside_procesado.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-        key="download_chaside_procesado_solo_link"
-    )
-
 def chaside_color_semaforo(semaforo):
     """Define color visual del diagnóstico CHASIDE."""
 
@@ -2974,8 +2780,63 @@ def chaside_color_semaforo(semaforo):
         return "#F3F4F6", "#6B7280", "Respuesta no confiable"
 
     return "#F3F4F6", "#6B7280", "Sin sugerencia clara"
-    
-    def chaside_render_reporte_ejecutivo_solo_link():
+
+
+def chaside_recomendacion_ejecutiva_solo_link(fila):
+    """Genera recomendación ejecutiva para CHASIDE."""
+
+    semaforo = fila["Semáforo vocacional"]
+    nivel = fila["Nivel de intensidad"]
+    carrera_elegida = fila[CHASIDE_COLUMNA_CARRERA]
+    carrera_mejor = fila["Carrera_Mejor_Perfilada"]
+
+    if semaforo == "Respondió siempre igual":
+        return (
+            "El patrón de respuesta muestra baja variabilidad. "
+            "Se recomienda interpretar el resultado con cautela y considerar "
+            "una entrevista breve o reaplicación del instrumento."
+        )
+
+    if pd.isna(nivel) or str(nivel).strip() == "" or str(nivel) == "nan":
+        nivel = "Sin nivel definido"
+
+    if nivel == "Sin perfil":
+        return (
+            "El perfil vocacional muestra baja correspondencia con la carrera elegida. "
+            "Se recomienda orientación vocacional individual y seguimiento temprano."
+        )
+
+    if nivel == "Perfil en riesgo":
+        return (
+            "Existe coincidencia mínima entre el perfil vocacional y la carrera elegida. "
+            "Se recomienda seguimiento tutorial durante el primer semestre."
+        )
+
+    if nivel == "Perfil en transición":
+        return (
+            "El perfil muestra congruencia funcional con la carrera elegida. "
+            "Se recomienda acompañamiento preventivo para consolidar su permanencia."
+        )
+
+    if nivel == "Joven promesa":
+        return (
+            "El perfil muestra alta congruencia con la carrera elegida. "
+            "Se recomienda promover actividades de alto desempeño y seguimiento positivo."
+        )
+
+    if carrera_mejor != carrera_elegida and carrera_mejor != "Sin sugerencia clara":
+        return (
+            f"El perfil sugiere mayor afinidad hacia {carrera_mejor}. "
+            "Se recomienda revisión vocacional complementaria."
+        )
+
+    return (
+        "El resultado puede considerarse regular. "
+        "Se recomienda seguimiento académico preventivo durante el primer semestre."
+    )
+
+
+def chaside_render_reporte_ejecutivo_solo_link():
     """Reporte ejecutivo CHASIDE sin archivo de aspirantes."""
 
     st.markdown("## Reporte ejecutivo CHASIDE")
@@ -3001,9 +2862,11 @@ def chaside_color_semaforo(semaforo):
         f"Pesos activos → Intereses: {peso_intereses:.1f} | "
         f"Aptitudes: {peso_aptitudes:.1f}"
     )
+
     try:
         with st.spinner("Cargando y procesando respuestas CHASIDE..."):
             df_chaside_raw = chaside_cargar_respuestas(url_chaside)
+
             resultado_chaside = chaside_procesar_respuestas(
                 df_chaside_raw,
                 peso_intereses=peso_intereses,
@@ -3023,6 +2886,7 @@ def chaside_color_semaforo(semaforo):
     except Exception as error:
         st.error(f"No fue posible procesar CHASIDE: {error}")
         return
+
     total_chaside = int(df_chaside.shape[0])
 
     st.success(
@@ -3165,58 +3029,16 @@ def chaside_color_semaforo(semaforo):
         key="download_chaside_procesado_solo_link"
     )
 
-def chaside_recomendacion_ejecutiva_solo_link(fila):
-    semaforo = fila["Semáforo vocacional"]
-    nivel = fila["Nivel de intensidad"]
-    carrera_elegida = fila[CHASIDE_COLUMNA_CARRERA]
-    carrera_mejor = fila["Carrera_Mejor_Perfilada"]
 
-    if semaforo == "Respondió siempre igual":
-        return (
-            "El patrón de respuesta muestra baja variabilidad. "
-            "Se recomienda interpretar el resultado con cautela y considerar "
-            "una entrevista breve o reaplicación del instrumento."
-        )
+def render_modulo_chaside_con_carga():
+    """Muestra CHASIDE únicamente desde el enlace de respuestas."""
 
-    if pd.isna(nivel) or str(nivel).strip() == "" or str(nivel) == "nan":
-        nivel = "Sin nivel definido"
-
-    if nivel == "Sin perfil":
-        return (
-            "El perfil vocacional muestra baja correspondencia con la carrera elegida. "
-            "Se recomienda orientación vocacional individual y seguimiento temprano."
-        )
-
-    if nivel == "Perfil en riesgo":
-        return (
-            "Existe coincidencia mínima entre el perfil vocacional y la carrera elegida. "
-            "Se recomienda seguimiento tutorial durante el primer semestre."
-        )
-
-    if nivel == "Perfil en transición":
-        return (
-            "El perfil muestra congruencia funcional con la carrera elegida. "
-            "Se recomienda acompañamiento preventivo para consolidar su permanencia."
-        )
-
-    if nivel == "Joven promesa":
-        return (
-            "El perfil muestra alta congruencia con la carrera elegida. "
-            "Se recomienda promover actividades de alto desempeño y seguimiento positivo."
-        )
-
-    if carrera_mejor != carrera_elegida and carrera_mejor != "Sin sugerencia clara":
-        return (
-            f"El perfil sugiere mayor afinidad hacia {carrera_mejor}. "
-            "Se recomienda revisión vocacional complementaria."
-        )
-
-    return (
-        "El resultado puede considerarse regular. "
-        "Se recomienda seguimiento académico preventivo durante el primer semestre."
+    st.title("🧭 Diagnóstico vocacional CHASIDE")
+    st.caption(
+        "Este módulo se alimenta directamente del enlace de respuestas de Google Forms / Google Sheets."
     )
 
-
+    chaside_render_reporte_ejecutivo_solo_link()
 # ============================================================
 # MÓDULO 3: PERFIL INDIVIDUAL
 # ============================================================
