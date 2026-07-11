@@ -2306,6 +2306,9 @@ def render_historial():
         df_general["Bachillerato_procedencia_original"] = "Sin dato"
         df_general["Bachillerato_procedencia"] = "Sin dato"
         df_general["Estado_procedencia"] = "Sin dato"
+    
+    mapa_colores_carreras = hist_crear_mapa_colores_carreras(df_general)
+    
     seccion_activa = st.radio(
         "Navegación",
         [
@@ -4024,7 +4027,8 @@ def render_perfil_individual():
     configuracion = perfil_configuracion_alerta_tutoria(
         nivel_alerta
     )
-    st.markdown("## Dictamen tutorial")
+
+        st.markdown("## Dictamen tutorial")
 
     st.markdown(
         f"""
@@ -4035,16 +4039,16 @@ def render_perfil_individual():
             border-radius: 16px;
             margin-top: 12px;
             margin-bottom: 18px;
-            color: {configuracion['color_texto']};
+            color: #111111;
         ">
             <h3 style="
                 margin-top: 0;
                 margin-bottom: 4px;
-                color: {configuracion['color_texto']};
+                color: #111111;
             ">
                 {configuracion['titulo']}
             </h3>
-            <p style="margin-bottom: 0;">
+            <p style="margin-bottom: 0; color:#111111;">
                 Clasificación general para orientar el seguimiento tutorial.
             </p>
         </div>
@@ -4056,32 +4060,28 @@ def render_perfil_individual():
         dictamen_tutoria,
         start=1
     ):
+
+        html_punto = f'''
+        <div style="
+            background-color: #FFFFFF;
+            border: 1px solid #F0D6D6;
+            border-left: 6px solid {configuracion["color_borde"]};
+            padding: 14px 18px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            color: #111111;
+            font-size: 17px;
+            line-height: 1.55;
+        ">
+            <b style="color:#111111;">{numero}. {titulo}:</b> {contenido}
+        </div>
+        '''
+
         st.markdown(
-            f"""
-            <div style="
-    for numero, (titulo, contenido) in enumerate(
-        dictamen_tutoria,
-        start=1
-    ):
-        st.markdown(
-            f"""
-            <div style="
-                background-color: #FFFFFF;
-                border: 1px solid #F0D6D6;
-                border-left: 6px solid {configuracion['color_borde']};
-                padding: 14px 18px;
-                border-radius: 12px;
-                margin-bottom: 10px;
-                color: #111111;
-                font-size: 17px;
-                line-height: 1.55;
-            ">
-                <b style="color:#111111;">{numero}. {titulo}:</b> {contenido}
-            </div>
-            """,
+            html_punto,
             unsafe_allow_html=True
         )
-        
+    
     if not tabla_contexto.empty:
         st.markdown("### Detalle por dimensión")
 
