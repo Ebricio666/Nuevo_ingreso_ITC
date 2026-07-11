@@ -5092,19 +5092,23 @@ def render_perfil_individual():
             + ".pdf"
         )
 
-        st.download_button(
-            label="⬇️ Descargar dictamen tutorial en PDF",
-            data=pdf_dictamen,
-            file_name=nombre_archivo_pdf,
-            mime="application/pdf",
-            use_container_width=True
-        )
+    st.download_button(
+        label="⬇️ Descargar dictamen tutorial en PDF",
+        data=pdf_dictamen,
+        file_name=nombre_archivo_pdf,
+        mime="application/pdf",
+        use_container_width=True
+    )
+
+# ============================================================
+# ============================================================
+# FUNCIONES BASE CHASIDE
+# ============================================================
 
     except ModuleNotFoundError:
         st.warning(
             "Para activar la descarga en PDF, agrega `reportlab` al archivo requirements.txt."
         ) 
-============================================================
 # FUNCIONES BASE CHASIDE
 # ============================================================
 
