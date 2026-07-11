@@ -1,6 +1,7 @@
 import io
 import re
 import unicodedata
+from difflib import SequenceMatcher
 from datetime import date, datetime
 
 import numpy as np
@@ -9,6 +10,66 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+# ============================================================
+# CONSTANTES CHASIDE
+# ============================================================
+
+CHASIDE_AREAS = ["C", "H", "A", "S", "I", "D", "E"]
+
+CHASIDE_AREAS_LONG = {
+    "C": "Administrativo",
+    "H": "Humanidades y Sociales",
+    "A": "Artístico",
+    "S": "Ciencias de la Salud",
+    "I": "Enseñanzas Técnicas",
+    "D": "Defensa y Seguridad",
+    "E": "Ciencias Experimentales"
+}
+
+CHASIDE_INTERESES_ITEMS = {
+    "C": [1, 12, 20, 53, 64, 71, 78, 85, 91, 98],
+    "H": [9, 25, 34, 41, 56, 67, 74, 80, 89, 95],
+    "A": [3, 11, 21, 28, 36, 45, 50, 57, 81, 96],
+    "S": [8, 16, 23, 33, 44, 52, 62, 70, 87, 92],
+    "I": [6, 19, 27, 38, 47, 54, 60, 75, 83, 97],
+    "D": [5, 14, 24, 31, 37, 48, 58, 65, 73, 84],
+    "E": [17, 32, 35, 42, 49, 61, 68, 77, 88, 93]
+}
+
+CHASIDE_APTITUDES_ITEMS = {
+    "C": [2, 15, 46, 51],
+    "H": [30, 63, 72, 86],
+    "A": [22, 39, 76, 82],
+    "S": [4, 29, 40, 69],
+    "I": [10, 26, 59, 90],
+    "D": [13, 18, 43, 66],
+    "E": [7, 55, 79, 94]
+}
+
+CHASIDE_PERFILES_CARRERA = {
+    "Arquitectura": ["A", "I", "C"],
+    "Contador Público": ["C", "D"],
+    "Licenciatura en Administración": ["C", "D"],
+    "Ingeniería Ambiental": ["I", "C", "E"],
+    "Ingeniería Bioquímica": ["I", "C", "E"],
+    "Ingeniería en Gestión Empresarial": ["C", "D", "H"],
+    "Ingeniería Industrial": ["C", "D", "H"],
+    "Ingeniería en Inteligencia Artificial": ["I", "E"],
+    "Ingeniería Mecatrónica": ["I", "E"],
+    "Ingeniería en Sistemas Computacionales": ["I", "E"]
+}
+
+CHASIDE_DESC_INTENSIDAD = {
+    "Sin perfil": "La elección de carrera muestra baja correspondencia con el perfil vocacional identificado.",
+    "Perfil en riesgo": "El perfil vocacional presenta una coincidencia mínima con la carrera elegida.",
+    "Perfil en transición": "Existe congruencia funcional entre elección profesional y perfil vocacional, aunque aún en proceso de consolidación.",
+    "Joven promesa": "Existe alta congruencia entre el perfil vocacional y la carrera elegida."
+}
+
+CHASIDE_COLUMNA_NOMBRE = "Ingrese su nombre completo"
+CHASIDE_COLUMNA_CARRERA = "¿A qué carrera desea ingresar?"
+CHASIDE_COLUMNA_EMAIL_1 = "Dirección de correo electrónico"
+CHASIDE_COLUMNA_EMAIL_2 = "Escriba su correo electrónico"
 
 # ============================================================
 # CONFIGURACIÓN GENERAL
@@ -32,10 +93,10 @@ modulo_activo = st.sidebar.radio(
     [
         "📘 EVALUATEC 2026",
         "🎓 Historial de Aspirantes",
-        "👤 Perfil individual"
+        "👤 Perfil individual",
+        "🧭 Diagnóstico vocacional CHASIDE"
     ]
 )
-
 
 # ============================================================
 # UTILIDADES GENERALES COMPARTIDAS
@@ -80,25 +141,23 @@ def util_limpiar_texto_visible(valor):
     texto = str(valor).replace("\n", " ")
     return re.sub(r"\s+", " ", texto).strip()
 
+def dataframe_a_excel_bytes(dic_hojas):
+    """Convierte uno o varios DataFrames a archivo Excel en memoria."""
 
-def util_encontrar_columna(df, posibles_nombres):
-    columnas_normalizadas = {
-        util_limpiar_texto(columna): columna
-        for columna in df.columns
-    }
+    output = io.BytesIO()
 
-    for posible in posibles_nombres:
-        posible_limpio = util_limpiar_texto(posible)
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        for nombre_hoja, df_hoja in dic_hojas.items():
+            nombre_limpio = str(nombre_hoja)[:31] if nombre_hoja else "Hoja"
 
-        if posible_limpio in columnas_normalizadas:
-            return columnas_normalizadas[posible_limpio]
+            df_hoja.to_excel(
+                writer,
+                index=False,
+                sheet_name=nombre_limpio
+            )
 
-        for columna_limpia, columna_original in columnas_normalizadas.items():
-            if posible_limpio in columna_limpia:
-                return columna_original
-
-    return None
-
+    output.seek(0)
+    return output.getvalue()
 
 # ============================================================
 # ============================================================
@@ -2318,6 +2377,7 @@ def render_historial():
         label_visibility="collapsed",
         key="hist_navegacion_principal"
     )
+
     if seccion_activa == "📊 Análisis general":
 
         st.subheader("Análisis general de aspirantes")
@@ -2419,11 +2479,91 @@ def render_historial():
         )
         hist_mostrar_grafica_semaforo_bachillerato(df_carrera)
 
+def render_modulo_chaside(df_general):
+def render_modulo_chaside_con_carga():
+    """Carga historial de aspirantes y luego muestra el módulo ejecutivo CHASIDE."""
 
+    st.title("🧭 Diagnóstico vocacional CHASIDE")
+    st.caption(
+        "Este módulo cruza las respuestas del formulario CHASIDE contra el archivo de aspirantes."
+    )
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Carga CHASIDE")
+
+    archivo_historial = st.sidebar.file_uploader(
+        "Carga el Excel de Historial de Aspirantes",
+        type=["xlsx", "xls"],
+        key="chaside_historial_archivo"
+    )
+
+    if archivo_historial is None:
+        st.info(
+            "Carga el Excel de Historial de Aspirantes para cruzarlo con las respuestas CHASIDE."
+        )
+        st.stop()
+
+    contenido_archivo = archivo_historial.getvalue()
+
+    with st.spinner("Leyendo historial de aspirantes..."):
+        df_general, df_bitacora = hist_procesar_archivo_excel(
+            contenido_archivo
+        )
+
+    if df_general.empty:
+        st.error("No se pudieron identificar registros de aspirantes.")
+        st.dataframe(df_bitacora, use_container_width=True)
+        st.stop()
+
+    columna_sexo = util_encontrar_columna(
+        df_general,
+        ["Género", "Genero", "Sexo"]
+    )
+
+    if columna_sexo is not None:
+        df_general["Sexo_normalizado"] = df_general[
+            columna_sexo
+        ].apply(hist_normalizar_sexo)
+    else:
+        df_general["Sexo_normalizado"] = "Sin especificar"
+
+    df_general["Rango_promedio"] = df_general[
+        "Promedio_normalizado_100"
+    ].apply(hist_clasificar_rango_promedio)
+
+    columna_escuela = util_encontrar_columna(
+        df_general,
+        [
+            "Escuela de Procedencia",
+            "Escuela Procedencia",
+            "Procedencia",
+            "Escuela"
+        ]
+    )
+
+    if columna_escuela is not None:
+        df_general["Bachillerato_procedencia_original"] = df_general[
+            columna_escuela
+        ].fillna("Sin dato").astype(str)
+
+        df_general["Bachillerato_procedencia"] = df_general[
+            columna_escuela
+        ].apply(hist_normalizar_escuela_procedencia)
+
+        df_general["Estado_procedencia"] = df_general[
+            columna_escuela
+        ].apply(hist_clasificar_estado_procedencia)
+
+    else:
+        df_general["Bachillerato_procedencia_original"] = "Sin dato"
+        df_general["Bachillerato_procedencia"] = "Sin dato"
+        df_general["Estado_procedencia"] = "Sin dato"
+
+    render_modulo_chaside(df_general)
 # ============================================================
 # MÓDULO 3: PERFIL INDIVIDUAL
 # ============================================================
-
+    
 def perfil_normalizar_nombre(valor):
     """Normaliza nombres para cruzar Historial contra EVALUATEC."""
 
@@ -4201,3 +4341,5 @@ elif modulo_activo == "🎓 Historial de Aspirantes":
 elif modulo_activo == "👤 Perfil individual":
     render_perfil_individual()
 
+elif modulo_activo == "🧭 Diagnóstico vocacional CHASIDE":
+    render_modulo_chaside_con_carga()
