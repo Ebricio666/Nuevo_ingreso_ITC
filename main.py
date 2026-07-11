@@ -3817,79 +3817,6 @@ def perfil_generar_pdf_dictamen(nombre, carrera, configuracion, dictamen_tutoria
     buffer.seek(0)
     return buffer.getvalue()
     
-def render_perfil_individual():
-    st.title("👤 Perfil individual del aspirante")
-    
-    serie = grupo_referencia[columna_grupo].dropna()
-
-    if pd.isna(resultado) or serie.empty or len(serie) < 5:
-        return "Estudiante regular", "#111111"
-
-    q1 = serie.quantile(0.25)
-    q3 = serie.quantile(0.75)
-    iqr = q3 - q1
-
-    limite_inferior = q1 - 1.5 * iqr
-    limite_superior = q3 + 1.5 * iqr
-
-    if resultado < limite_inferior:
-        return "Estudiante en riesgo de no acreditar", "#C62828"
-
-    if resultado > limite_superior:
-        return "Joven promesa", "#2E7D32"
-
-    return "Estudiante regular", "#111111"
-    """
-    Calcula posición del estudiante contra sus compañeros.
-    No grafica el boxplot; solo usa su lógica para clasificar.
-    """
-
-    grupo = perfil_obtener_grupo_referencia(
-        fila,
-        df_evaluatec
-    )
-
-    promedio_eval = perfil_valor(
-        fila,
-        "eval_Promedio_global_individual",
-        np.nan
-    )
-
-    resultado_global = perfil_clasificar_por_cuartiles(
-        promedio_eval,
-        grupo["Promedio_global_individual"]
-    )
-
-    registros_dimensiones = []
-
-    for _, area in tabla_areas.iterrows():
-        codigo = area["Código"]
-        columna = f"Area_{codigo}"
-
-        if columna not in grupo.columns:
-            continue
-
-        resultado_dimension = perfil_clasificar_por_cuartiles(
-            area["Resultado"],
-            grupo[columna]
-        )
-
-        registros_dimensiones.append(
-            {
-                "Dimensión": area["Dimensión"],
-                "Resultado": area["Resultado"],
-                "Clasificación": resultado_dimension["Clasificación"],
-                "Nivel": resultado_dimension["Nivel"],
-                "Q1": resultado_dimension["Q1"],
-                "Q2": resultado_dimension["Q2"],
-                "Q3": resultado_dimension["Q3"]
-            }
-        )
-
-    tabla_contexto = pd.DataFrame(registros_dimensiones)
-
-    return resultado_global, tabla_contexto, grupo
-
 
 def perfil_color_clasificacion(clasificacion):
     """Color visual para semáforo."""
@@ -4723,90 +4650,6 @@ def perfil_interpretar_intensidad_chaside(nivel):
 
     return "requiere interpretación complementaria por parte del tutor o responsable académico"
 
-def perfil_generar_pdf_dictamen(nombre, carrera, nivel_alerta, dictamen_tutoria):
-    """Genera PDF simple del dictamen tutorial."""
-
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import cm
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-    from reportlab.lib.enums import TA_LEFT
-    from reportlab.lib import colors
-
-    buffer = io.BytesIO()
-
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        rightMargin=1.8 * cm,
-        leftMargin=1.8 * cm,
-        topMargin=1.8 * cm,
-        bottomMargin=1.8 * cm
-    )
-
-    styles = getSampleStyleSheet()
-
-    estilo_titulo = ParagraphStyle(
-        "TituloDictamen",
-        parent=styles["Title"],
-        fontSize=18,
-        leading=22,
-        alignment=TA_LEFT,
-        textColor=colors.HexColor("#111111"),
-        spaceAfter=12
-    )
-
-    estilo_subtitulo = ParagraphStyle(
-        "SubtituloDictamen",
-        parent=styles["Normal"],
-        fontSize=10,
-        leading=14,
-        textColor=colors.HexColor("#555555"),
-        spaceAfter=16
-    )
-
-    estilo_punto = ParagraphStyle(
-        "PuntoDictamen",
-        parent=styles["Normal"],
-        fontSize=10.5,
-        leading=16,
-        textColor=colors.HexColor("#111111"),
-        spaceAfter=12
-    )
-
-    elementos = []
-
-    elementos.append(
-        Paragraph("Dictamen tutorial", estilo_titulo)
-    )
-
-    elementos.append(
-        Paragraph(
-            f"<b>Estudiante:</b> {nombre}<br/>"
-            f"<b>Carrera:</b> {carrera}<br/>"
-            f"<b>Clasificación tutorial:</b> {nivel_alerta}",
-            estilo_subtitulo
-        )
-    )
-
-    for numero, (titulo, contenido) in enumerate(dictamen_tutoria, start=1):
-        contenido_pdf = str(contenido)
-        contenido_pdf = contenido_pdf.replace("<span", "<font")
-        contenido_pdf = contenido_pdf.replace("</span>", "</font>")
-
-        elementos.append(
-            Paragraph(
-                f"<b>{numero}. {titulo}:</b> {contenido_pdf}",
-                estilo_punto
-            )
-        )
-
-        elementos.append(Spacer(1, 6))
-
-    doc.build(elementos)
-
-    buffer.seek(0)
-    return buffer.getvalue()
     
 def render_perfil_individual():
     st.title("👤 Perfil individual del aspirante")
@@ -4945,8 +4788,6 @@ def render_perfil_individual():
     indice_original = opciones[opcion_seleccionada]
     fila = df_cruzado.loc[indice_original]
 
-    st.markdown("---")
-    st.markdown("## Tarjeta de información del aspirante")
     nombre = perfil_valor(fila, "Nombre_visible")
     carrera_historial = perfil_valor(fila, "Carrera_historial")
     carrera_eval = perfil_valor(fila, "Carrera_evaluatec")
@@ -4975,10 +4816,6 @@ def render_perfil_individual():
     estado = perfil_valor(fila, "hist_Estado_procedencia")
     matricula = perfil_valor(fila, "hist_ID_aspirante")
     
-    dictamen_chaside = (
-        "No se encontró registro CHASIDE para este aspirante. "
-        "Se recomienda solicitarle responder la escala para complementar el dictamen tutorial."
-    )
     # ------------------------------------------------------------
     # CHASIDE para dictamen tutorial
     # ------------------------------------------------------------
@@ -5242,7 +5079,25 @@ def render_perfil_individual():
             html_punto,
             unsafe_allow_html=True
         )
+     pdf_dictamen = perfil_generar_pdf_dictamen(
+        nombre=nombre,
+        carrera=carrera_historial,
+        configuracion=configuracion,
+        dictamen_tutoria=dictamen_tutoria
+    )
+    nombre_archivo_pdf = (
+        "dictamen_tutorial_"
+        + perfil_normalizar_nombre(nombre).lower().replace(" ", "_")
+        + ".pdf"
+    )
 
+    st.download_button(
+        label="⬇️ Descargar dictamen tutorial en PDF",
+        data=pdf_dictamen,
+        file_name=nombre_archivo_pdf,
+        mime="application/pdf",
+        use_container_width=True
+    )
 
 # ============================================================
 # ============================================================
@@ -5577,82 +5432,3 @@ elif modulo_activo == "🧭 Diagnóstico vocacional CHASIDE":
 
 elif modulo_activo == "👤 Perfil individual":
     render_perfil_individual()
-
-    configuracion = perfil_configuracion_alerta_tutoria(
-        nivel_alerta
-    )
-
-    st.markdown("## Dictamen tutorial")
-
-    st.markdown(
-        f"""
-        <div style="
-            background-color: {configuracion['color_fondo']};
-            border-left: 10px solid {configuracion['color_borde']};
-            padding: 20px 24px;
-            border-radius: 16px;
-            margin-top: 12px;
-            margin-bottom: 18px;
-            color: #111111;
-        ">
-            <h3 style="
-                margin-top: 0;
-                margin-bottom: 4px;
-                color: #111111;
-            ">
-                {configuracion['titulo']}
-            </h3>
-            <p style="margin-bottom: 0; color:#111111;">
-                Clasificación general para orientar el seguimiento tutorial.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    for numero, (titulo, contenido) in enumerate(
-        dictamen_tutoria,
-        start=1
-    ):
-
-        html_punto = f'''
-        <div style="
-            background-color: #FFFFFF;
-            border: 1px solid #F0D6D6;
-            border-left: 6px solid {configuracion["color_borde"]};
-            padding: 14px 18px;
-            border-radius: 12px;
-            margin-bottom: 10px;
-            color: #111111;
-            font-size: 17px;
-            line-height: 1.55;
-        ">
-            <b style="color:#111111;">{numero}. {titulo}:</b> {contenido}
-        </div>
-        '''
-
-        st.markdown(
-            html_punto,
-            unsafe_allow_html=True
-        )
-
-    pdf_dictamen = perfil_generar_pdf_dictamen(
-        nombre=nombre,
-        carrera=carrera_historial,
-        configuracion=configuracion,
-        dictamen_tutoria=dictamen_tutoria
-    )
-
-    nombre_archivo_pdf = (
-        "dictamen_tutorial_"
-        + perfil_normalizar_nombre(nombre).lower().replace(" ", "_")
-        + ".pdf"
-    )
-
-    st.download_button(
-        label="⬇️ Descargar dictamen tutorial en PDF",
-        data=pdf_dictamen,
-        file_name=nombre_archivo_pdf,
-        mime="application/pdf",
-        use_container_width=True
-    )
