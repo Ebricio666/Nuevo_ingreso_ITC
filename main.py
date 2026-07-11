@@ -4108,34 +4108,38 @@ def render_perfil_individual():
     configuracion = perfil_configuracion_alerta_tutoria(
         nivel_alerta
     )
-
     st.markdown("## Dictamen tutorial")
 
-    st.markdown(
-        f"""
-        <div style="
-            background-color: {configuracion['color_fondo']};
-            border-left: 10px solid {configuracion['color_borde']};
-            padding: 24px 28px;
-            border-radius: 16px;
-            margin-top: 12px;
-            margin-bottom: 24px;
+    html_dictamen = f"""
+    <div style="
+        background-color: {configuracion['color_fondo']};
+        border-left: 10px solid {configuracion['color_borde']};
+        padding: 24px 28px;
+        border-radius: 16px;
+        margin-top: 12px;
+        margin-bottom: 24px;
+        color: {configuracion['color_texto']};
+        font-size: 18px;
+        line-height: 1.65;
+    ">
+        <h3 style="
+            margin-top: 0;
+            margin-bottom: 12px;
             color: {configuracion['color_texto']};
-            font-size: 18px;
-            line-height: 1.65;
         ">
-            <h3 style="
-                margin-top: 0;
-                margin-bottom: 12px;
-                color: {configuracion['color_texto']};
-            ">
-                {configuracion['titulo']}
-            </h3>
-            {dictamen_tutoria}
-        </div>
-        """,
+            {configuracion['titulo']}
+        </h3>
+
+        {dictamen_tutoria}
+    </div>
+    """
+
+    st.markdown(
+        html_dictamen,
         unsafe_allow_html=True
     )
+
+    
     if not tabla_contexto.empty:
         st.markdown("### Detalle por dimensión")
 
