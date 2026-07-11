@@ -2753,85 +2753,258 @@ def render_historial():
         hist_mostrar_grafica_semaforo_bachillerato(df_carrera)
 
 def render_modulo_chaside_con_carga():
-    """Carga historial de aspirantes y luego muestra el módulo ejecutivo CHASIDE."""
+    """Muestra CHASIDE únicamente desde el enlace de respuestas."""
 
     st.title("🧭 Diagnóstico vocacional CHASIDE")
     st.caption(
-        "Este módulo cruza las respuestas del formulario CHASIDE contra el archivo de aspirantes."
+        "Este módulo se alimenta directamente del enlace de respuestas de Google Forms / Google Sheets."
     )
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Carga CHASIDE")
+    chaside_render_reporte_ejecutivo_solo_link()
 
-    archivo_historial = st.sidebar.file_uploader(
-        "Carga el Excel de Historial de Aspirantes",
-        type=["xlsx", "xls"],
-        key="chaside_historial_archivo"
+def chaside_render_reporte_ejecutivo_solo_link():
+    """Reporte ejecutivo CHASIDE sin archivo de aspirantes."""
+
+    st.markdown("## Reporte ejecutivo CHASIDE")
+
+    url_chaside = st.text_input(
+        "Pega el enlace de respuestas de Google Forms / Google Sheets",
+        value="https://docs.google.com/spreadsheets/u/2/d/1YHMEb5hftOZfV-CMWoUsUgJh1xmsgTY3YYwAtq1dGQA/edit?resourcekey&gid=1491376423#gid=1491376423",
+        key="chaside_url_google_solo_link"
     )
 
-    if archivo_historial is None:
-        st.info(
-            "Carga el Excel de Historial de Aspirantes para cruzarlo con las respuestas CHASIDE."
+    peso_intereses = st.slider(
+        "Peso de intereses",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.8,
+        step=0.1,
+        key="chaside_peso_intereses_solo_link"
+    )
+
+    peso_aptitudes = round(1 - peso_intereses, 2)
+
+    st.caption(
+        f"Pesos activos → Intereses: {peso_intereses:.1f} | "
+        f"Aptitudes: {peso_aptitudes:.1f}"
+    )
+
+    try:
+        with st.spinner("Cargando y procesando respuestas CHASIDE..."):
+            df_chaside_raw = chaside_cargar_respuestas(url_chaside)
+
+            df_chaside = chaside_procesar_respuestas(
+                df_chaside_raw,
+                peso_intereses=peso_intereses,
+                peso_aptitudes=peso_aptitudes
+            )
+
+    except Exception as error:
+        st.error(f"No fue posible procesar CHASIDE: {error}")
+        return
+
+    st.success(
+        f"CHASIDE procesado correctamente: {len(df_chaside):,} respuestas."
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Respuestas", f"{len(df_chaside):,}")
+    col2.metric(
+        "Perfil adecuado",
+        int((df_chaside["Semáforo vocacional"] == "Verde").sum())
+    )
+    col3.metric(
+        "Requiere revisión",
+        int((df_chaside["Semáforo vocacional"] != "Verde").sum())
+    )
+
+    st.markdown("## Reporte individual para docente")
+
+    df_selector = df_chaside.copy()
+
+    df_selector["Etiqueta"] = df_selector.apply(
+        lambda fila: (
+            f"{fila[CHASIDE_COLUMNA_NOMBRE]} · "
+            f"{fila[CHASIDE_COLUMNA_CARRERA]} · "
+            f"{fila['Semáforo vocacional']}"
+        ),
+        axis=1
+    )
+
+    opciones = sorted(
+        df_selector["Etiqueta"]
+        .dropna()
+        .astype(str)
+        .unique()
+    )
+
+    if not opciones:
+        st.warning("No hay estudiantes disponibles para mostrar.")
+        return
+
+    seleccion = st.selectbox(
+        "Selecciona estudiante",
+        options=opciones,
+        key="chaside_selector_estudiante_solo_link"
+    )
+
+    fila = df_selector[
+        df_selector["Etiqueta"] == seleccion
+    ].iloc[0]
+
+    fondo, borde, titulo = chaside_color_semaforo(
+        fila["Semáforo vocacional"]
+    )
+
+    recomendacion = chaside_recomendacion_ejecutiva_solo_link(fila)
+
+    st.markdown(
+        f"""
+        <div style="
+            background-color:{fondo};
+            border-left:10px solid {borde};
+            padding:20px 24px;
+            border-radius:16px;
+            color:#111111;
+            margin-bottom:16px;
+        ">
+            <h3 style="margin-top:0; color:#111111;">{titulo}</h3>
+            <p style="margin-bottom:0;">
+                <b>Diagnóstico:</b> {fila['Diagnóstico vocacional']}
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        st.markdown("### Identificación")
+        st.write(f"**Nombre:** {fila[CHASIDE_COLUMNA_NOMBRE]}")
+        st.write(f"**Carrera elegida:** {fila[CHASIDE_COLUMNA_CARRERA]}")
+
+        if CHASIDE_COLUMNA_EMAIL_1 in fila.index:
+            st.write(f"**Correo Google:** {fila[CHASIDE_COLUMNA_EMAIL_1]}")
+
+        if CHASIDE_COLUMNA_EMAIL_2 in fila.index:
+            st.write(f"**Correo escrito:** {fila[CHASIDE_COLUMNA_EMAIL_2]}")
+
+    with col_b:
+        st.markdown("### Perfil vocacional")
+        st.write(
+            f"**Área fuerte:** {fila['Area_Fuerte_Ponderada']} · "
+            f"{CHASIDE_AREAS_LONG.get(fila['Area_Fuerte_Ponderada'], '')}"
         )
-        st.stop()
+        st.write(f"**Semáforo vocacional:** {fila['Semáforo vocacional']}")
+        st.write(f"**Nivel de intensidad:** {fila['Nivel de intensidad']}")
+        st.write(f"**Carrera mejor perfilada:** {fila['Carrera_Mejor_Perfilada']}")
 
-    contenido_archivo = archivo_historial.getvalue()
+    st.markdown("### Recomendación docente")
+    st.info(recomendacion)
 
-    with st.spinner("Leyendo historial de aspirantes..."):
-        df_general, df_bitacora = hist_procesar_archivo_excel(
-            contenido_archivo
+    st.markdown("### Puntajes por área CHASIDE")
+
+    tabla_areas = []
+
+    for area in CHASIDE_AREAS:
+        tabla_areas.append({
+            "Área": area,
+            "Descripción": CHASIDE_AREAS_LONG[area],
+            "Intereses": fila[f"INTERES_{area}"],
+            "Aptitudes": fila[f"APTITUD_{area}"],
+            "Puntaje combinado": fila[f"PUNTAJE_COMBINADO_{area}"]
+        })
+
+    st.dataframe(
+        pd.DataFrame(tabla_areas).sort_values(
+            "Puntaje combinado",
+            ascending=False
+        ),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.download_button(
+        label="⬇️ Descargar respuestas CHASIDE procesadas",
+        data=dataframe_a_excel_bytes({
+            "CHASIDE procesado": df_chaside
+        }),
+        file_name="chaside_procesado.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="download_chaside_procesado_solo_link"
+    )
+
+def chaside_color_semaforo(semaforo):
+    if semaforo == "Verde":
+        return "#E8F5E9", "#2E7D32", "Perfil acorde"
+
+    if semaforo == "Amarillo":
+        return "#FFF8E1", "#F9A825", "Perfil por revisar"
+
+    if semaforo == "Rojo":
+        return "#FFEBEE", "#C62828", "Perfil en riesgo"
+
+    if semaforo == "Respondió siempre igual":
+        return "#F3F4F6", "#6B7280", "Respuesta no confiable"
+
+    return "#F3F4F6", "#6B7280", "Sin sugerencia clara"
+
+
+def chaside_recomendacion_ejecutiva_solo_link(fila):
+    semaforo = fila["Semáforo vocacional"]
+    nivel = fila["Nivel de intensidad"]
+    carrera_elegida = fila[CHASIDE_COLUMNA_CARRERA]
+    carrera_mejor = fila["Carrera_Mejor_Perfilada"]
+
+    if semaforo == "Respondió siempre igual":
+        return (
+            "El patrón de respuesta muestra baja variabilidad. "
+            "Se recomienda interpretar el resultado con cautela y considerar "
+            "una entrevista breve o reaplicación del instrumento."
         )
 
-    if df_general.empty:
-        st.error("No se pudieron identificar registros de aspirantes.")
-        st.dataframe(df_bitacora, use_container_width=True)
-        st.stop()
+    if pd.isna(nivel) or str(nivel).strip() == "" or str(nivel) == "nan":
+        nivel = "Sin nivel definido"
 
-    columna_sexo = util_encontrar_columna(
-        df_general,
-        ["Género", "Genero", "Sexo"]
+    if nivel == "Sin perfil":
+        return (
+            "El perfil vocacional muestra baja correspondencia con la carrera elegida. "
+            "Se recomienda orientación vocacional individual y seguimiento temprano."
+        )
+
+    if nivel == "Perfil en riesgo":
+        return (
+            "Existe coincidencia mínima entre el perfil vocacional y la carrera elegida. "
+            "Se recomienda seguimiento tutorial durante el primer semestre."
+        )
+
+    if nivel == "Perfil en transición":
+        return (
+            "El perfil muestra congruencia funcional con la carrera elegida. "
+            "Se recomienda acompañamiento preventivo para consolidar su permanencia."
+        )
+
+    if nivel == "Joven promesa":
+        return (
+            "El perfil muestra alta congruencia con la carrera elegida. "
+            "Se recomienda promover actividades de alto desempeño y seguimiento positivo."
+        )
+
+    if carrera_mejor != carrera_elegida and carrera_mejor != "Sin sugerencia clara":
+        return (
+            f"El perfil sugiere mayor afinidad hacia {carrera_mejor}. "
+            "Se recomienda revisión vocacional complementaria."
+        )
+
+    return (
+        "El resultado puede considerarse regular. "
+        "Se recomienda seguimiento académico preventivo durante el primer semestre."
     )
 
-    if columna_sexo is not None:
-        df_general["Sexo_normalizado"] = df_general[
-            columna_sexo
-        ].apply(hist_normalizar_sexo)
-    else:
-        df_general["Sexo_normalizado"] = "Sin especificar"
 
-    df_general["Rango_promedio"] = df_general[
-        "Promedio_normalizado_100"
-    ].apply(hist_clasificar_rango_promedio)
-
-    columna_escuela = util_encontrar_columna(
-        df_general,
-        [
-            "Escuela de Procedencia",
-            "Escuela Procedencia",
-            "Procedencia",
-            "Escuela"
-        ]
-    )
-
-    if columna_escuela is not None:
-        df_general["Bachillerato_procedencia_original"] = df_general[
-            columna_escuela
-        ].fillna("Sin dato").astype(str)
-
-        df_general["Bachillerato_procedencia"] = df_general[
-            columna_escuela
-        ].apply(hist_normalizar_escuela_procedencia)
-
-        df_general["Estado_procedencia"] = df_general[
-            columna_escuela
-        ].apply(hist_clasificar_estado_procedencia)
-
-    else:
-        df_general["Bachillerato_procedencia_original"] = "Sin dato"
-        df_general["Bachillerato_procedencia"] = "Sin dato"
-        df_general["Estado_procedencia"] = "Sin dato"
-
-    chaside_render_reporte_ejecutivo(df_general)
 # ============================================================
 # MÓDULO 3: PERFIL INDIVIDUAL
 # ============================================================
@@ -4723,6 +4896,320 @@ def render_perfil_individual():
 
 
 # ============================================================
+# ============================================================
+# FUNCIONES BASE CHASIDE
+# ============================================================
+
+def chaside_transformar_url_google_sheets(url):
+    """Convierte una URL editable de Google Sheets a CSV exportable."""
+
+    url = str(url).strip()
+
+    if "export?format=csv" in url:
+        return url
+
+    if "docs.google.com/spreadsheets" in url:
+        try:
+            file_id = url.split("/d/")[1].split("/")[0]
+
+            gid = "0"
+            if "gid=" in url:
+                gid = url.split("gid=")[-1].split("&")[0].split("#")[0]
+
+            return (
+                f"https://docs.google.com/spreadsheets/d/"
+                f"{file_id}/export?format=csv&gid={gid}"
+            )
+
+        except Exception:
+            raise ValueError(
+                "No se pudo transformar el enlace de Google Sheets. "
+                "Pega el enlace completo del archivo de respuestas."
+            )
+
+    return url
+
+
+@st.cache_data(show_spinner=False)
+def chaside_cargar_respuestas(url):
+    """Carga respuestas CHASIDE desde Google Sheets."""
+    url_csv = chaside_transformar_url_google_sheets(url)
+    return pd.read_csv(url_csv)
+
+
+def chaside_col_item(columnas_items, i):
+    return columnas_items[i - 1]
+
+
+def chaside_procesar_respuestas(
+    df_raw,
+    peso_intereses=0.8,
+    peso_aptitudes=0.2
+):
+    """Procesa respuestas CHASIDE y genera diagnóstico vocacional."""
+
+    df = df_raw.copy()
+    df.columns = df.columns.str.strip()
+
+    faltantes = [
+        columna
+        for columna in [
+            CHASIDE_COLUMNA_NOMBRE,
+            CHASIDE_COLUMNA_CARRERA
+        ]
+        if columna not in df.columns
+    ]
+
+    if faltantes:
+        raise ValueError(
+            f"Faltan columnas requeridas en CHASIDE: {faltantes}. "
+            f"Columnas detectadas: {list(df.columns)}"
+        )
+
+    columnas_items = df.columns[6:104]
+
+    if len(columnas_items) != 98:
+        raise ValueError(
+            f"Se esperaban 98 reactivos CHASIDE, "
+            f"pero se detectaron {len(columnas_items)}. "
+            "Revisa que el enlace corresponda a la hoja de respuestas del formulario."
+        )
+
+    df_items = (
+        df[columnas_items]
+        .astype(str)
+        .apply(lambda col: col.str.strip().str.lower())
+        .replace({
+            "sí": 1,
+            "si": 1,
+            "s": 1,
+            "1": 1,
+            "true": 1,
+            "verdadero": 1,
+            "x": 1,
+            "no": 0,
+            "n": 0,
+            "0": 0,
+            "false": 0,
+            "falso": 0,
+            "": 0,
+            "nan": 0
+        })
+        .apply(pd.to_numeric, errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
+
+    df[columnas_items] = df_items
+
+    df["Desv_Intrapersona"] = df[columnas_items].std(axis=1)
+    umbral = df["Desv_Intrapersona"].quantile(0.10)
+    df["Respondio_Siempre_Igual"] = df["Desv_Intrapersona"] <= umbral
+
+    for area in CHASIDE_AREAS:
+        df[f"INTERES_{area}"] = df[
+            [
+                chaside_col_item(columnas_items, i)
+                for i in CHASIDE_INTERESES_ITEMS[area]
+            ]
+        ].sum(axis=1)
+
+        df[f"APTITUD_{area}"] = df[
+            [
+                chaside_col_item(columnas_items, i)
+                for i in CHASIDE_APTITUDES_ITEMS[area]
+            ]
+        ].sum(axis=1)
+
+    for area in CHASIDE_AREAS:
+        df[f"PUNTAJE_COMBINADO_{area}"] = (
+            df[f"INTERES_{area}"] * peso_intereses
+            +
+            df[f"APTITUD_{area}"] * peso_aptitudes
+        )
+
+        df[f"TOTAL_{area}"] = (
+            df[f"INTERES_{area}"]
+            +
+            df[f"APTITUD_{area}"]
+        )
+
+    df["Area_Fuerte_Ponderada"] = df.apply(
+        lambda fila: max(
+            CHASIDE_AREAS,
+            key=lambda area: fila[f"PUNTAJE_COMBINADO_{area}"]
+        ),
+        axis=1
+    )
+
+    columnas_score = [
+        f"PUNTAJE_COMBINADO_{area}"
+        for area in CHASIDE_AREAS
+    ]
+
+    df["Score_CHASIDE"] = df[columnas_score].max(axis=1)
+
+    def evaluar_coincidencia(area_chaside, carrera):
+        carrera = str(carrera).strip()
+        perfil = CHASIDE_PERFILES_CARRERA.get(carrera)
+
+        if not perfil:
+            return "Sin perfil definido"
+
+        if area_chaside in perfil:
+            return "Coherente"
+
+        return "No coincidente"
+
+    df["Coincidencia_CHASIDE"] = df.apply(
+        lambda fila: evaluar_coincidencia(
+            fila["Area_Fuerte_Ponderada"],
+            fila[CHASIDE_COLUMNA_CARRERA]
+        ),
+        axis=1
+    )
+
+    def carrera_mejor_perfilada(fila):
+        if fila["Respondio_Siempre_Igual"]:
+            return "Información no confiable"
+
+        area = fila["Area_Fuerte_Ponderada"]
+        carrera_actual = str(fila[CHASIDE_COLUMNA_CARRERA]).strip()
+
+        sugeridas = [
+            carrera
+            for carrera, letras in CHASIDE_PERFILES_CARRERA.items()
+            if area in letras
+        ]
+
+        if carrera_actual in sugeridas:
+            return carrera_actual
+
+        if sugeridas:
+            return ", ".join(sugeridas)
+
+        return "Sin sugerencia clara"
+
+    df["Carrera_Mejor_Perfilada"] = df.apply(
+        carrera_mejor_perfilada,
+        axis=1
+    )
+
+    def diagnostico(fila):
+        carrera_actual = str(fila[CHASIDE_COLUMNA_CARRERA]).strip()
+        mejor = str(fila["Carrera_Mejor_Perfilada"]).strip()
+
+        if fila["Respondio_Siempre_Igual"]:
+            return "Información no confiable"
+
+        if mejor == carrera_actual:
+            return "Perfil adecuado"
+
+        if mejor == "Sin sugerencia clara":
+            return "Sin sugerencia clara"
+
+        return f"Sugerencia: {mejor}"
+
+    df["Diagnóstico vocacional"] = df.apply(
+        diagnostico,
+        axis=1
+    )
+
+    def semaforo(fila):
+        if fila["Respondio_Siempre_Igual"]:
+            return "Respondió siempre igual"
+
+        if fila["Diagnóstico vocacional"] == "Sin sugerencia clara":
+            return "Sin sugerencia"
+
+        if (
+            fila["Diagnóstico vocacional"] == "Perfil adecuado"
+            and fila["Coincidencia_CHASIDE"] == "Coherente"
+        ):
+            return "Verde"
+
+        if fila["Diagnóstico vocacional"] == "Perfil adecuado":
+            return "Amarillo"
+
+        if str(fila["Diagnóstico vocacional"]).startswith("Sugerencia:"):
+            return "Amarillo"
+
+        return "Rojo"
+
+    df["Semáforo vocacional"] = df.apply(
+        semaforo,
+        axis=1
+    )
+
+    df_intensidad = df[
+        df["Semáforo vocacional"].isin(["Verde", "Amarillo"])
+    ].copy()
+
+    df["Nivel de intensidad"] = np.nan
+
+    def asignar_intensidad_por_carrera(grupo):
+        grupo = grupo.copy()
+        grupo["Nivel de intensidad"] = pd.Series(
+            index=grupo.index,
+            dtype="object"
+        )
+
+        amarillos = grupo[
+            grupo["Semáforo vocacional"] == "Amarillo"
+        ].sort_values("Score_CHASIDE", ascending=True).copy()
+
+        verdes = grupo[
+            grupo["Semáforo vocacional"] == "Verde"
+        ].sort_values("Score_CHASIDE", ascending=True).copy()
+
+        if not amarillos.empty:
+            amarillos["rank_pct"] = (
+                np.arange(len(amarillos)) + 1
+            ) / len(amarillos)
+
+            amarillos["Nivel de intensidad"] = np.where(
+                amarillos["rank_pct"] <= 0.25,
+                "Sin perfil",
+                "Perfil en riesgo"
+            )
+
+            grupo.loc[
+                amarillos.index,
+                "Nivel de intensidad"
+            ] = amarillos["Nivel de intensidad"]
+
+        if not verdes.empty:
+            verdes["rank_pct"] = (
+                np.arange(len(verdes)) + 1
+            ) / len(verdes)
+
+            verdes["Nivel de intensidad"] = np.where(
+                verdes["rank_pct"] > 0.75,
+                "Joven promesa",
+                "Perfil en transición"
+            )
+
+            grupo.loc[
+                verdes.index,
+                "Nivel de intensidad"
+            ] = verdes["Nivel de intensidad"]
+
+        return grupo
+
+    if not df_intensidad.empty:
+        df_intensidad = (
+            df_intensidad
+            .groupby(CHASIDE_COLUMNA_CARRERA, group_keys=False)
+            .apply(asignar_intensidad_por_carrera)
+            .copy()
+        )
+
+        df.loc[
+            df_intensidad.index,
+            "Nivel de intensidad"
+        ] = df_intensidad["Nivel de intensidad"]
+
+    return df
 
 def chaside_render_reporte_ejecutivo(df_general):
     """Renderiza el reporte ejecutivo CHASIDE usando el historial ya cargado."""
