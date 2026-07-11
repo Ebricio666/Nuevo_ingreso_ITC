@@ -3407,6 +3407,30 @@ def perfil_promedio_grupo_historial(fila, df_historial):
         "Promedio_normalizado_100"
     ].mean()
 
+def perfil_texto_comparativo(valor_estudiante, valor_grupo):
+    """
+    Redacta comparación simple entre estudiante y grupo.
+    """
+
+    if pd.isna(valor_estudiante) or pd.isna(valor_grupo):
+        return "sin información suficiente para realizar una comparación con sus pares"
+
+    diferencia = valor_estudiante - valor_grupo
+
+    if diferencia > 0:
+        return (
+            f"superior en {abs(diferencia):.1f} puntos porcentuales "
+            f"respecto a sus pares"
+        )
+
+    if diferencia < 0:
+        return (
+            f"inferior en {abs(diferencia):.1f} puntos porcentuales "
+            f"respecto a sus pares"
+        )
+
+    return "similar al promedio de sus pares"
+
 
 def perfil_texto_comparativo_coloreado(valor_estudiante, valor_grupo):
     """
@@ -3435,30 +3459,6 @@ def perfil_texto_comparativo_coloreado(valor_estudiante, valor_grupo):
         "<b style='color:#333333;'>similar al promedio de sus pares</b>"
     )
     
-    """
-    Redacta comparación simple entre estudiante y grupo.
-    """
-
-    if pd.isna(valor_estudiante) or pd.isna(valor_grupo):
-        return "sin información suficiente para realizar una comparación con sus pares"
-
-    diferencia = valor_estudiante - valor_grupo
-
-    if diferencia > 0:
-        return (
-            f"superior en {abs(diferencia):.1f} puntos porcentuales "
-            f"respecto a sus pares"
-        )
-
-    if diferencia < 0:
-        return (
-            f"inferior en {abs(diferencia):.1f} puntos porcentuales "
-            f"respecto a sus pares"
-        )
-
-    return "similar al promedio de sus pares"
-
-
 def perfil_describir_dimensiones(tabla_contexto):
     """
     Identifica dimensiones prioritarias y fortalezas.
@@ -3569,16 +3569,17 @@ def perfil_generar_dictamen_tutoria(
         "Promedio_global_individual"
     ].mean()
 
-    comparativo_bach = perfil_texto_comparativo(
+    comparativo_bach = perfil_texto_comparativo_coloreado(
         promedio_bach,
         promedio_bach_grupo
     )
 
-    comparativo_eval = perfil_texto_comparativo(
+    comparativo_eval = perfil_texto_comparativo_coloreado(
         promedio_eval,
         promedio_eval_grupo
     )
 
+    
     nivel_alerta = perfil_clasificar_alerta_tutoria(
         promedio_bach=promedio_bach,
         promedio_eval=promedio_eval,
@@ -3638,7 +3639,7 @@ def perfil_generar_dictamen_tutoria(
 
             if columna_grupo is not None and columna_grupo in grupo_referencia.columns:
                 promedio_grupo_area = grupo_referencia[columna_grupo].mean()
-                comparativo_area = perfil_texto_comparativo(
+                comparativo_area = perfil_texto_comparativo_coloreado(
                     resultado,
                     promedio_grupo_area
                 )
@@ -3667,11 +3668,11 @@ def perfil_generar_dictamen_tutoria(
 
             if columna_grupo is not None and columna_grupo in grupo_referencia.columns:
                 promedio_grupo_area = grupo_referencia[columna_grupo].mean()
-                comparativo_area = perfil_texto_comparativo(
+                comparativo_area = perfil_texto_comparativo_coloreado(
                     resultado,
                     promedio_grupo_area
                 )
-
+                
                 textos_oportunidad.append(
                     f"<b>{dimension}</b> ({resultado:.1f}%), {comparativo_area} "
                     f"(<b>{perfil_formato_porcentaje(promedio_grupo_area)}</b>)"
@@ -4058,21 +4059,29 @@ def render_perfil_individual():
         st.markdown(
             f"""
             <div style="
-                background-color: {configuracion['color_fondo']};
+    for numero, (titulo, contenido) in enumerate(
+        dictamen_tutoria,
+        start=1
+    ):
+        st.markdown(
+            f"""
+            <div style="
+                background-color: #FFFFFF;
+                border: 1px solid #F0D6D6;
                 border-left: 6px solid {configuracion['color_borde']};
                 padding: 14px 18px;
                 border-radius: 12px;
                 margin-bottom: 10px;
-                color: {configuracion['color_texto']};
+                color: #111111;
                 font-size: 17px;
                 line-height: 1.55;
             ">
-                <b>{numero}. {titulo}:</b> {contenido}
+                <b style="color:#111111;">{numero}. {titulo}:</b> {contenido}
             </div>
             """,
             unsafe_allow_html=True
         )
-    
+        
     if not tabla_contexto.empty:
         st.markdown("### Detalle por dimensión")
 
