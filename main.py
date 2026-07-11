@@ -2422,32 +2422,935 @@ def render_historial():
 # MÓDULO 3: PERFIL INDIVIDUAL
 # ============================================================
 
+def perfil_normalizar_nombre(valor):
+    """Normaliza nombres para cruzar Historial contra EVALUATEC."""
+
+    if pd.isna(valor):
+        return ""
+
+    texto = str(valor).upper().strip()
+    texto = unicodedata.normalize("NFD", texto)
+
+    texto = "".join(
+        caracter
+        for caracter in texto
+        if unicodedata.category(caracter) != "Mn"
+    )
+
+    texto = re.sub(r"[^A-ZÑ\s]", " ", texto)
+    texto = re.sub(r"\s+", " ", texto).strip()
+
+    return texto
+
+
+def perfil_nombre_visible(valor):
+    """Convierte el nombre a formato visible."""
+
+    if pd.isna(valor):
+        return "Sin nombre"
+
+    texto = str(valor).strip()
+    texto = re.sub(r"\s+", " ", texto)
+
+    return texto.title()
+
+
+def perfil_simplificar_carrera(valor):
+    """Normaliza carreras para validación flexible."""
+
+    if pd.isna(valor):
+        return ""
+
+    texto = util_limpiar_texto(valor)
+
+    reemplazos = [
+        "licenciatura en",
+        "lic. en",
+        "licenciatura",
+        "lic ",
+        "ingenieria en",
+        "ingeniería en",
+        "ing. en",
+        "ing ",
+        "carrera de",
+        "programa de"
+    ]
+
+    for reemplazo in reemplazos:
+        texto = texto.replace(reemplazo, "")
+
+    texto = texto.replace(".", " ")
+    texto = re.sub(r"[^a-z0-9\s]", " ", texto)
+    texto = re.sub(r"\s+", " ", texto).strip()
+
+    return texto
+
+
+def perfil_encontrar_nombre_historial(df):
+    """Detecta columnas separadas de apellido y nombre en Historial."""
+
+    col_apellido_paterno = util_encontrar_columna(
+        df,
+        [
+            "Apellido paterno",
+            "Primer apellido",
+            "Paterno"
+        ]
+    )
+
+    col_apellido_materno = util_encontrar_columna(
+        df,
+        [
+            "Apellido materno",
+            "Segundo apellido",
+            "Materno"
+        ]
+    )
+
+    col_nombre = util_encontrar_columna(
+        df,
+        [
+            "Nombre (s)",
+            "Nombre(s)",
+            "Nombres",
+            "Nombre"
+        ]
+    )
+
+    if col_apellido_paterno is None or col_nombre is None:
+        return None, None, None
+
+    return col_apellido_paterno, col_apellido_materno, col_nombre
+
+
+def perfil_encontrar_nombre_evaluatec(df):
+    """Detecta columna de nombre completo en EVALUATEC."""
+
+    posibles_columnas = [
+        "Nombre completo",
+        "NombreCompleto",
+        "Nombre del aspirante",
+        "Aspirante",
+        "Alumno",
+        "Estudiante",
+        "Participante",
+        "Nombre",
+        "Nombre(s)"
+    ]
+
+    return util_encontrar_columna(df, posibles_columnas)
+
+
+def perfil_preparar_historial(contenido_archivo):
+    """Procesa Historial y prepara nombre, carrera y datos generales."""
+
+    df_historial, df_bitacora = hist_procesar_archivo_excel(
+        contenido_archivo
+    )
+
+    if df_historial.empty:
+        return pd.DataFrame(), df_bitacora
+
+    col_apellido_paterno, col_apellido_materno, col_nombre = perfil_encontrar_nombre_historial(
+        df_historial
+    )
+
+    if col_apellido_paterno is None or col_nombre is None:
+        st.error(
+            "En el Historial no pude identificar las columnas de apellido paterno y nombre."
+        )
+        return pd.DataFrame(), df_bitacora
+
+    if col_apellido_materno is None:
+        df_historial["Nombre_completo_visible"] = (
+            df_historial[col_apellido_paterno].fillna("").astype(str)
+            + " "
+            + df_historial[col_nombre].fillna("").astype(str)
+        )
+    else:
+        df_historial["Nombre_completo_visible"] = (
+            df_historial[col_apellido_paterno].fillna("").astype(str)
+            + " "
+            + df_historial[col_apellido_materno].fillna("").astype(str)
+            + " "
+            + df_historial[col_nombre].fillna("").astype(str)
+        )
+
+    df_historial["Nombre_completo_visible"] = df_historial[
+        "Nombre_completo_visible"
+    ].apply(perfil_nombre_visible)
+
+    df_historial["Nombre_match"] = df_historial[
+        "Nombre_completo_visible"
+    ].apply(perfil_normalizar_nombre)
+
+    df_historial["Letra_apellido"] = df_historial[
+        col_apellido_paterno
+    ].fillna("").astype(str).str.strip().str[:1].str.upper()
+
+    df_historial["Carrera_match"] = df_historial[
+        "Carrera"
+    ].apply(perfil_simplificar_carrera)
+
+    columna_id = util_encontrar_columna(
+        df_historial,
+        [
+            "Matrícula/ID",
+            "Matricula/ID",
+            "Matrícula",
+            "Matricula",
+            "ID"
+        ]
+    )
+
+    if columna_id is not None:
+        df_historial["ID_aspirante"] = df_historial[columna_id]
+    else:
+        df_historial["ID_aspirante"] = "Sin dato"
+
+    columna_sexo = util_encontrar_columna(
+        df_historial,
+        ["Género", "Genero", "Sexo"]
+    )
+
+    if columna_sexo is not None:
+        df_historial["Sexo_normalizado"] = df_historial[
+            columna_sexo
+        ].apply(hist_normalizar_sexo)
+    else:
+        df_historial["Sexo_normalizado"] = "Sin especificar"
+
+    df_historial["Rango_promedio"] = df_historial[
+        "Promedio_normalizado_100"
+    ].apply(hist_clasificar_rango_promedio)
+
+    columna_escuela = util_encontrar_columna(
+        df_historial,
+        [
+            "Escuela de Procedencia",
+            "Escuela Procedencia",
+            "Procedencia",
+            "Escuela"
+        ]
+    )
+
+    if columna_escuela is not None:
+        df_historial["Bachillerato_procedencia"] = df_historial[
+            columna_escuela
+        ].apply(hist_normalizar_escuela_procedencia)
+
+        df_historial["Estado_procedencia"] = df_historial[
+            columna_escuela
+        ].apply(hist_clasificar_estado_procedencia)
+    else:
+        df_historial["Bachillerato_procedencia"] = "Sin dato"
+        df_historial["Estado_procedencia"] = "Sin dato"
+
+    return df_historial, df_bitacora
+
+
+def perfil_preparar_evaluatec(archivos_subidos):
+    """Procesa los 3 CSV de EVALUATEC y prepara nombre normalizado."""
+
+    bases = []
+    errores = []
+
+    for archivo in archivos_subidos:
+        try:
+            df_archivo, areas_detectadas = eval_procesar_archivo(
+                archivo
+            )
+
+            columna_nombre = perfil_encontrar_nombre_evaluatec(
+                df_archivo
+            )
+
+            if columna_nombre is None:
+                errores.append(
+                    f"{archivo.name}: no encontré columna de nombre del aspirante."
+                )
+                continue
+
+            df_archivo["Nombre_completo_visible"] = df_archivo[
+                columna_nombre
+            ].apply(perfil_nombre_visible)
+
+            df_archivo["Nombre_match"] = df_archivo[
+                columna_nombre
+            ].apply(perfil_normalizar_nombre)
+
+            df_archivo["Carrera_match"] = df_archivo[
+                "Carrera_normalizada"
+            ].apply(perfil_simplificar_carrera)
+
+            df_archivo["Areas_detectadas_lista"] = ",".join(
+                areas_detectadas.keys()
+            )
+
+            bases.append(df_archivo)
+
+        except Exception as error:
+            errores.append(
+                f"{archivo.name}: {error}"
+            )
+
+    if not bases:
+        return pd.DataFrame(), errores
+
+    df_evaluatec = pd.concat(
+        bases,
+        ignore_index=True,
+        sort=False
+    )
+
+    return df_evaluatec, errores
+
+
+def perfil_crear_base_cruzada(df_historial, df_evaluatec):
+    """Cruza Historial y EVALUATEC usando nombre como llave principal."""
+
+    hist = df_historial.copy()
+    eval_df = df_evaluatec.copy()
+
+    hist = hist.add_prefix("hist_")
+    eval_df = eval_df.add_prefix("eval_")
+
+    df_cruzado = hist.merge(
+        eval_df,
+        left_on="hist_Nombre_match",
+        right_on="eval_Nombre_match",
+        how="outer",
+        indicator=True
+    )
+
+    df_cruzado["Nombre_visible"] = df_cruzado[
+        "hist_Nombre_completo_visible"
+    ].combine_first(
+        df_cruzado["eval_Nombre_completo_visible"]
+    )
+
+    df_cruzado["Carrera_historial"] = df_cruzado[
+        "hist_Carrera"
+    ]
+
+    df_cruzado["Carrera_evaluatec"] = df_cruzado[
+        "eval_Carrera_normalizada"
+    ]
+
+    df_cruzado["Carrera_referencia"] = df_cruzado[
+        "Carrera_historial"
+    ].combine_first(
+        df_cruzado["Carrera_evaluatec"]
+    )
+
+    df_cruzado["Letra_apellido"] = df_cruzado[
+        "hist_Letra_apellido"
+    ]
+
+    df_cruzado["Letra_apellido"] = df_cruzado[
+        "Letra_apellido"
+    ].fillna(
+        df_cruzado["Nombre_visible"]
+        .fillna("")
+        .astype(str)
+        .str[:1]
+        .str.upper()
+    )
+
+    df_cruzado["Carrera_coincide"] = (
+        df_cruzado["hist_Carrera_match"]
+        == df_cruzado["eval_Carrera_match"]
+    )
+
+    df_cruzado["Estatus_cruce"] = np.select(
+        [
+            df_cruzado["_merge"] == "both",
+            df_cruzado["_merge"] == "left_only",
+            df_cruzado["_merge"] == "right_only"
+        ],
+        [
+            "Coincide en ambas bases",
+            "Solo en Historial",
+            "Solo en EVALUATEC"
+        ],
+        default="Sin clasificar"
+    )
+
+    df_cruzado.loc[
+        (
+            df_cruzado["_merge"] == "both"
+        )
+        &
+        (
+            df_cruzado["Carrera_coincide"] == False
+        ),
+        "Estatus_cruce"
+    ] = "Coincide por nombre, carrera distinta"
+
+    df_cruzado["Etiqueta_selector"] = df_cruzado.apply(
+        lambda fila: (
+            f"{fila['Nombre_visible']} · "
+            f"{fila['Carrera_referencia']} · "
+            f"{fila['Estatus_cruce']}"
+        ),
+        axis=1
+    )
+
+    return df_cruzado
+
+def perfil_valor(fila, columna, default="Sin dato"):
+    """Obtiene un valor seguro para mostrar."""
+
+    if columna not in fila.index:
+        return default
+
+    valor = fila[columna]
+
+    if pd.isna(valor) or str(valor).strip() == "":
+        return default
+
+    return valor
+
+
+def perfil_formato_porcentaje(valor):
+    """Formatea valores como porcentaje."""
+
+    if pd.isna(valor):
+        return "Sin dato"
+
+    try:
+        return f"{float(valor):.1f}%"
+    except Exception:
+        return "Sin dato"
+
+
+def perfil_obtener_areas_individuales(fila):
+    """Extrae resultados EVALUATEC por dimensión para un aspirante."""
+
+    registros = []
+
+    for codigo in EVAL_ORDEN_AREAS:
+        columna = f"eval_Area_{codigo}"
+
+        if columna not in fila.index:
+            continue
+
+        valor = fila[columna]
+
+        if pd.isna(valor):
+            continue
+
+        registros.append(
+            {
+                "Código": codigo,
+                "Dimensión": EVAL_ETIQUETAS_AREAS.get(codigo, codigo),
+                "Resultado": float(valor)
+            }
+        )
+
+    return pd.DataFrame(registros)
+
+
+def perfil_clasificar_nivelacion(promedio):
+    """Clasifica necesidad de nivelación individual."""
+
+    if pd.isna(promedio):
+        return "Sin dato"
+
+    if promedio < 50:
+        return "Nivelación prioritaria"
+
+    if promedio < 70:
+        return "Seguimiento académico"
+
+    return "Fortalecimiento regular"
+
+
+def perfil_generar_diagnostico(fila, tabla_areas):
+    """Genera diagnóstico individual breve."""
+
+    nombre = perfil_valor(fila, "Nombre_visible")
+
+    promedio_eval = perfil_valor(
+        fila,
+        "eval_Promedio_global_individual",
+        np.nan
+    )
+
+    promedio_bach = perfil_valor(
+        fila,
+        "hist_Promedio_normalizado_100",
+        np.nan
+    )
+
+    estatus = perfil_valor(
+        fila,
+        "Estatus_cruce"
+    )
+
+    if not tabla_areas.empty:
+        tabla_ordenada = tabla_areas.sort_values(
+            "Resultado",
+            ascending=True
+        )
+
+        prioridades = tabla_ordenada.head(2)
+
+        fortalezas = tabla_ordenada.tail(2).sort_values(
+            "Resultado",
+            ascending=False
+        )
+
+        texto_prioridades = ", ".join(
+            [
+                f"{fila_area['Dimensión']} ({fila_area['Resultado']:.1f}%)"
+                for _, fila_area in prioridades.iterrows()
+            ]
+        )
+
+        texto_fortalezas = ", ".join(
+            [
+                f"{fila_area['Dimensión']} ({fila_area['Resultado']:.1f}%)"
+                for _, fila_area in fortalezas.iterrows()
+            ]
+        )
+    else:
+        texto_prioridades = "sin datos EVALUATEC suficientes"
+        texto_fortalezas = "sin datos EVALUATEC suficientes"
+
+    if pd.notna(promedio_eval):
+        nivelacion = perfil_clasificar_nivelacion(promedio_eval)
+        texto_eval = (
+            f"En EVALUATEC obtuvo un promedio global de "
+            f"**{promedio_eval:.1f}%**."
+        )
+    else:
+        nivelacion = "Sin dato"
+        texto_eval = "No se encontró resultado global de EVALUATEC."
+
+    if pd.notna(promedio_bach):
+        texto_bach = (
+            f"Su promedio de bachillerato registrado es "
+            f"**{promedio_bach:.1f}%**."
+        )
+    else:
+        texto_bach = "No se encontró promedio de bachillerato válido."
+
+    return (
+        f"**{nombre}** tiene estatus de cruce: **{estatus}**. "
+        f"{texto_bach} {texto_eval} "
+        f"Sus principales fortalezas son **{texto_fortalezas}**. "
+        f"Las áreas prioritarias de trabajo son **{texto_prioridades}**. "
+        f"Clasificación sugerida: **{nivelacion}**."
+    )
+
+
+def perfil_generar_recomendaciones(fila, tabla_areas):
+    """Genera recomendaciones individuales de nivelación."""
+
+    promedio_eval = perfil_valor(
+        fila,
+        "eval_Promedio_global_individual",
+        np.nan
+    )
+
+    if tabla_areas.empty:
+        return [
+            "Revisar manualmente el expediente porque no se localizaron resultados EVALUATEC.",
+            "Validar nombre y carrera para confirmar si existe diferencia de registro entre bases."
+        ]
+
+    prioridades = (
+        tabla_areas
+        .sort_values("Resultado", ascending=True)
+        .head(2)
+    )
+
+    recomendaciones = []
+
+    for _, area in prioridades.iterrows():
+        dimension = area["Dimensión"]
+        resultado = area["Resultado"]
+
+        if resultado < 50:
+            recomendaciones.append(
+                f"Priorizar nivelación en {dimension}, ya que el resultado fue {resultado:.1f}%."
+            )
+        elif resultado < 70:
+            recomendaciones.append(
+                f"Dar seguimiento en {dimension}; el resultado fue {resultado:.1f}% y puede fortalecerse."
+            )
+        else:
+            recomendaciones.append(
+                f"Mantener práctica de refuerzo en {dimension}; aunque no es crítica, puede consolidarse."
+            )
+
+    if pd.notna(promedio_eval) and promedio_eval < 50:
+        recomendaciones.append(
+            "Sugerir acompañamiento académico temprano durante las primeras semanas del semestre."
+        )
+    elif pd.notna(promedio_eval) and promedio_eval < 70:
+        recomendaciones.append(
+            "Sugerir seguimiento académico preventivo y actividades de reforzamiento."
+        )
+    else:
+        recomendaciones.append(
+            "Mantener monitoreo regular y orientar al estudiante hacia actividades de consolidación."
+        )
+
+    return recomendaciones
+
+
+def perfil_mostrar_resultados_evaluatec_individual(tabla_areas):
+    """Muestra gráfica individual de áreas EVALUATEC."""
+
+    if tabla_areas.empty:
+        st.info("No hay resultados EVALUATEC para este aspirante.")
+        return
+
+    tabla = tabla_areas.sort_values(
+        "Resultado",
+        ascending=True
+    )
+
+    colores = []
+
+    for valor in tabla["Resultado"]:
+        if valor < 25:
+            colores.append(EVAL_COLORES_NIVELES["Bajo"])
+        elif valor < 50:
+            colores.append(EVAL_COLORES_NIVELES["Básico"])
+        elif valor < 75:
+            colores.append(EVAL_COLORES_NIVELES["Satisfactorio"])
+        else:
+            colores.append(EVAL_COLORES_NIVELES["Alto"])
+
+    fig = go.Figure(
+        go.Bar(
+            x=tabla["Resultado"],
+            y=tabla["Dimensión"],
+            orientation="h",
+            marker_color=colores,
+            text=[
+                f"{valor:.1f}%"
+                for valor in tabla["Resultado"]
+            ],
+            textposition="outside",
+            hovertemplate=(
+                "<b>%{y}</b><br>"
+                "Resultado: %{x:.1f}%"
+                "<extra></extra>"
+            )
+        )
+    )
+
+    fig.update_layout(
+        title="Resultados EVALUATEC por dimensión",
+        xaxis=dict(
+            title="Calificación obtenida",
+            range=[0, 100],
+            ticksuffix="%"
+        ),
+        yaxis_title="",
+        height=max(420, len(tabla) * 70),
+        margin=dict(t=70, b=40, l=230, r=60)
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
 def render_perfil_individual():
-    st.title("👤 Perfil individual")
-    st.caption("Próxima fase: cruce por nombre entre EVALUATEC e Historial de Aspirantes.")
-
-    st.info(
-        "Esta sección ya queda preparada para el siguiente paso. "
-        "Aquí vamos a cargar ambas bases, homologar nombres y construir "
-        "el perfil integral por estudiante."
+    st.title("👤 Perfil individual del aspirante")
+    st.caption(
+        "Cruce entre Historial de Aspirantes y EVALUATEC usando nombre como llave principal."
     )
 
-    st.markdown(
-        """
-        ### Lo que integraremos aquí
-        
-        - Datos generales del aspirante.
-        - Carrera seleccionada.
-        - Promedio de bachillerato.
-        - Escuela y estado de procedencia.
-        - Resultados EVALUATEC.
-        - Áreas fuertes.
-        - Áreas prioritarias.
-        - Diagnóstico individual.
-        - Recomendaciones de nivelación.
-        """
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Carga Perfil Individual")
+
+    archivos_eval = st.sidebar.file_uploader(
+        "Carga los 3 CSV de EVALUATEC",
+        type=["csv"],
+        accept_multiple_files=True,
+        key="perfil_eval_archivos"
     )
 
+    archivo_historial = st.sidebar.file_uploader(
+        "Carga el Excel de Historial de Aspirantes",
+        type=["xlsx", "xls"],
+        key="perfil_historial_archivo"
+    )
+
+    if not archivos_eval or archivo_historial is None:
+        st.info(
+            "Para construir el perfil individual carga los archivos de EVALUATEC "
+            "y el Excel de Historial de Aspirantes."
+        )
+        st.stop()
+
+    if len(archivos_eval) != 3:
+        st.warning(
+            f"Cargaste {len(archivos_eval)} archivo(s) de EVALUATEC. "
+            "Se requieren exactamente 3."
+        )
+        st.stop()
+
+    with st.spinner("Procesando y cruzando bases de datos..."):
+        df_evaluatec, errores_eval = perfil_preparar_evaluatec(
+            archivos_eval
+        )
+
+        df_historial, df_bitacora = perfil_preparar_historial(
+            archivo_historial.getvalue()
+        )
+
+    if errores_eval:
+        for error in errores_eval:
+            st.warning(error)
+
+    if df_evaluatec.empty:
+        st.error("No se pudo procesar la base de EVALUATEC.")
+        st.stop()
+
+    if df_historial.empty:
+        st.error("No se pudo procesar el Historial de Aspirantes.")
+        st.dataframe(df_bitacora, use_container_width=True)
+        st.stop()
+
+    df_cruzado = perfil_crear_base_cruzada(
+        df_historial=df_historial,
+        df_evaluatec=df_evaluatec
+    )
+
+    st.markdown("## Validación del cruce")
+
+    total_ambas = int(
+        (
+            df_cruzado["Estatus_cruce"]
+            == "Coincide en ambas bases"
+        ).sum()
+    )
+
+    total_carrera_distinta = int(
+        (
+            df_cruzado["Estatus_cruce"]
+            == "Coincide por nombre, carrera distinta"
+        ).sum()
+    )
+
+    total_solo_historial = int(
+        (
+            df_cruzado["Estatus_cruce"]
+            == "Solo en Historial"
+        ).sum()
+    )
+
+    total_solo_eval = int(
+        (
+            df_cruzado["Estatus_cruce"]
+            == "Solo en EVALUATEC"
+        ).sum()
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("Coinciden", f"{total_ambas:,}")
+    col2.metric("Carrera distinta", f"{total_carrera_distinta:,}")
+    col3.metric("Solo Historial", f"{total_solo_historial:,}")
+    col4.metric("Solo EVALUATEC", f"{total_solo_eval:,}")
+
+    st.caption(
+        "El cruce principal se hace por nombre normalizado. "
+        "La carrera se usa como validación, considerando que algunos aspirantes pudieron cambiar de carrera."
+    )
+
+    st.markdown("---")
+    st.markdown("## Búsqueda del aspirante")
+
+    sistema_busqueda = st.radio(
+        "Selecciona sistema de búsqueda",
+        [
+            "🔤 Búsqueda por inicial del apellido",
+            "🎓 Búsqueda por carrera"
+        ],
+        horizontal=True
+    )
+
+    df_busqueda = df_cruzado.copy()
+
+    if sistema_busqueda == "🔤 Búsqueda por inicial del apellido":
+
+        letras_disponibles = sorted(
+            [
+                letra
+                for letra in df_busqueda["Letra_apellido"]
+                .dropna()
+                .astype(str)
+                .str.upper()
+                .unique()
+                if letra != ""
+            ]
+        )
+
+        letra_seleccionada = st.selectbox(
+            "Selecciona la letra del apellido",
+            options=letras_disponibles
+        )
+
+        df_filtrado = df_busqueda[
+            df_busqueda["Letra_apellido"] == letra_seleccionada
+        ].copy()
+
+    else:
+        carreras_disponibles = sorted(
+            df_busqueda["Carrera_referencia"]
+            .dropna()
+            .astype(str)
+            .unique()
+        )
+
+        carrera_seleccionada = st.selectbox(
+            "Selecciona la carrera",
+            options=carreras_disponibles
+        )
+
+        df_filtrado = df_busqueda[
+            df_busqueda["Carrera_referencia"] == carrera_seleccionada
+        ].copy()
+
+    df_filtrado = df_filtrado.sort_values(
+        "Nombre_visible"
+    ).reset_index(drop=False)
+
+    if df_filtrado.empty:
+        st.warning("No hay aspirantes con esos criterios.")
+        st.stop()
+
+    opciones = {
+        fila["Etiqueta_selector"]: fila["index"]
+        for _, fila in df_filtrado.iterrows()
+    }
+
+    opcion_seleccionada = st.selectbox(
+        "Selecciona al aspirante",
+        options=list(opciones.keys())
+    )
+
+    indice_original = opciones[opcion_seleccionada]
+
+    fila = df_cruzado.loc[indice_original]
+
+    st.markdown("---")
+    st.markdown("## Tarjeta de información del aspirante")
+
+    nombre = perfil_valor(fila, "Nombre_visible")
+    carrera_historial = perfil_valor(fila, "Carrera_historial")
+    carrera_eval = perfil_valor(fila, "Carrera_evaluatec")
+    estatus_cruce = perfil_valor(fila, "Estatus_cruce")
+
+    promedio_bach = perfil_valor(
+        fila,
+        "hist_Promedio_normalizado_100",
+        np.nan
+    )
+
+    promedio_eval = perfil_valor(
+        fila,
+        "eval_Promedio_global_individual",
+        np.nan
+    )
+
+    sexo = perfil_valor(fila, "hist_Sexo_normalizado")
+    escuela = perfil_valor(fila, "hist_Bachillerato_procedencia")
+    estado = perfil_valor(fila, "hist_Estado_procedencia")
+    matricula = perfil_valor(fila, "hist_ID_aspirante")
+
+    col_info, col_validacion = st.columns([2, 1])
+
+    with col_info:
+        st.markdown(f"### {nombre}")
+        st.write(f"**Matrícula/ID:** {matricula}")
+        st.write(f"**Sexo:** {sexo}")
+        st.write(f"**Carrera en Historial:** {carrera_historial}")
+        st.write(f"**Carrera en EVALUATEC:** {carrera_eval}")
+        st.write(f"**Escuela de procedencia:** {escuela}")
+        st.write(f"**Estado de procedencia:** {estado}")
+
+    with col_validacion:
+        st.metric(
+            "Estatus del cruce",
+            estatus_cruce
+        )
+
+        st.metric(
+            "Promedio bachillerato",
+            perfil_formato_porcentaje(promedio_bach)
+        )
+
+        st.metric(
+            "Promedio EVALUATEC",
+            perfil_formato_porcentaje(promedio_eval)
+        )
+
+        st.metric(
+            "Nivelación sugerida",
+            perfil_clasificar_nivelacion(promedio_eval)
+        )
+
+    tabla_areas = perfil_obtener_areas_individuales(fila)
+
+    st.markdown("## Resultados EVALUATEC")
+
+    perfil_mostrar_resultados_evaluatec_individual(tabla_areas)
+
+    if not tabla_areas.empty:
+        tabla_ordenada = tabla_areas.sort_values(
+            "Resultado",
+            ascending=True
+        )
+
+        prioridades = tabla_ordenada.head(2)
+
+        fortalezas = tabla_ordenada.tail(2).sort_values(
+            "Resultado",
+            ascending=False
+        )
+
+        col_fortalezas, col_prioridades = st.columns(2)
+
+        with col_fortalezas:
+            st.markdown("### Áreas fuertes")
+
+            for _, area in fortalezas.iterrows():
+                st.success(
+                    f"{area['Dimensión']}: {area['Resultado']:.1f}%"
+                )
+
+        with col_prioridades:
+            st.markdown("### Áreas prioritarias")
+
+            for _, area in prioridades.iterrows():
+                st.warning(
+                    f"{area['Dimensión']}: {area['Resultado']:.1f}%"
+                )
+
+    st.markdown("## Diagnóstico individual")
+
+    diagnostico = perfil_generar_diagnostico(
+        fila,
+        tabla_areas
+    )
+
+    st.info(diagnostico)
+
+    st.markdown("## Recomendaciones de nivelación")
+
+    recomendaciones = perfil_generar_recomendaciones(
+        fila,
+        tabla_areas
+    )
+
+    for recomendacion in recomendaciones:
+        st.write(f"- {recomendacion}")
 
 # ============================================================
 # RENDER PRINCIPAL
@@ -2461,3 +3364,4 @@ elif modulo_activo == "🎓 Historial de Aspirantes":
 
 elif modulo_activo == "👤 Perfil individual":
     render_perfil_individual()
+
