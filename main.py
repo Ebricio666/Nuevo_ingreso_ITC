@@ -3048,8 +3048,37 @@ def perfil_obtener_grupo_referencia(fila, df_evaluatec):
 
     return df_evaluatec.copy()
 
+def perfil_clasificar_area_boxplot(resultado, columna_grupo, grupo_referencia):
+    """
+    Clasifica una dimensión contra el grupo de referencia usando lógica de boxplot.
+    Solo marca extremos:
+    - Debajo del bigote inferior: riesgo de no acreditar.
+    - Arriba del bigote superior: joven promesa.
+    - Dentro de bigotes: estudiante regular.
+    """
 
-def perfil_crear_contexto_academico(fila, df_evaluatec, tabla_areas):
+    if columna_grupo not in grupo_referencia.columns:
+        return "Estudiante regular", "#111111"
+
+    serie = grupo_referencia[columna_grupo].dropna()
+
+    if pd.isna(resultado) or serie.empty or len(serie) < 5:
+        return "Estudiante regular", "#111111"
+
+    q1 = serie.quantile(0.25)
+    q3 = serie.quantile(0.75)
+    iqr = q3 - q1
+
+    limite_inferior = q1 - 1.5 * iqr
+    limite_superior = q3 + 1.5 * iqr
+
+    if resultado < limite_inferior:
+        return "Estudiante en riesgo de no acreditar", "#C62828"
+
+    if resultado > limite_superior:
+        return "Joven promesa", "#2E7D32"
+
+    return "Estudiante regular", "#111111"
     """
     Calcula posición del estudiante contra sus compañeros.
     No grafica el boxplot; solo usa su lógica para clasificar.
@@ -3714,15 +3743,6 @@ def perfil_generar_dictamen_tutoria(
         (
             "Dimensiones EVALUATEC",
             texto_dimensiones
-        ),
-        (
-            "Seguimiento y acompañamiento",
-            (
-                f"Se recomienda implementar acciones en las áreas de oportunidad "
-                f"identificadas, especialmente en {texto_oportunidad}. "
-                f"Como acciones preventivas y correctivas se sugiere: "
-                f"{acciones_prevencion} {acciones_correccion}"
-            )
         )
     ]
 
@@ -3791,50 +3811,7 @@ def render_perfil_individual():
         df_evaluatec=df_evaluatec
     )
 
-    st.markdown("## Validación del cruce")
-
-    total_ambas = int(
-        (
-            df_cruzado["Estatus_cruce"]
-            == "Coincide en ambas bases"
-        ).sum()
-    )
-
-    total_carrera_distinta = int(
-        (
-            df_cruzado["Estatus_cruce"]
-            == "Coincide por nombre, carrera distinta"
-        ).sum()
-    )
-
-    total_solo_historial = int(
-        (
-            df_cruzado["Estatus_cruce"]
-            == "Solo en Historial"
-        ).sum()
-    )
-
-    total_solo_eval = int(
-        (
-            df_cruzado["Estatus_cruce"]
-            == "Solo en EVALUATEC"
-        ).sum()
-    )
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric("Coinciden", f"{total_ambas:,}")
-    col2.metric("Carrera distinta", f"{total_carrera_distinta:,}")
-    col3.metric("Solo Historial", f"{total_solo_historial:,}")
-    col4.metric("Solo EVALUATEC", f"{total_solo_eval:,}")
-
-    st.caption(
-        "El cruce principal se hace por nombre normalizado. "
-        "La carrera se usa como validación, considerando que algunos aspirantes pudieron cambiar de carrera."
-    )
-
-    st.markdown("---")
-    st.markdown("## Búsqueda del aspirante")
+      st.markdown("## Búsqueda del aspirante")
 
     sistema_busqueda = st.radio(
         "Selecciona sistema de búsqueda",
@@ -3977,6 +3954,12 @@ def render_perfil_individual():
 
     perfil_mostrar_resultados_evaluatec_individual(tabla_areas)
 
+    resultado_global, tabla_contexto, grupo_referencia = perfil_crear_contexto_academico(
+        fila=fila,
+        df_evaluatec=df_evaluatec,
+        tabla_areas=tabla_areas
+    )
+
     if not tabla_areas.empty:
         tabla_ordenada = tabla_areas.sort_values(
             "Resultado",
@@ -3996,23 +3979,68 @@ def render_perfil_individual():
             st.markdown("### Áreas fuertes")
 
             for _, area in fortalezas.iterrows():
-                st.success(
-                    f"{area['Dimensión']}: {area['Resultado']:.1f}%"
+                codigo = area["Código"]
+                columna_grupo = f"Area_{codigo}"
+
+                etiqueta_boxplot, color_etiqueta = perfil_clasificar_area_boxplot(
+                    resultado=area["Resultado"],
+                    columna_grupo=columna_grupo,
+                    grupo_referencia=grupo_referencia
+                )
+
+                st.markdown(
+                    f"""
+                    <div style="
+                        background-color:#FFFFFF;
+                        border-left:6px solid #2E7D32;
+                        border:1px solid #DADADA;
+                        padding:12px 14px;
+                        border-radius:12px;
+                        margin-bottom:10px;
+                        color:#111111;
+                    ">
+                        <b>{area['Dimensión']}:</b> {area['Resultado']:.1f}%<br>
+                        <span style="color:{color_etiqueta}; font-weight:700;">
+                            {etiqueta_boxplot}
+                        </span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
                 )
 
         with col_prioridades:
             st.markdown("### Áreas prioritarias")
 
             for _, area in prioridades.iterrows():
-                st.warning(
-                    f"{area['Dimensión']}: {area['Resultado']:.1f}%"
+                codigo = area["Código"]
+                columna_grupo = f"Area_{codigo}"
+
+                etiqueta_boxplot, color_etiqueta = perfil_clasificar_area_boxplot(
+                    resultado=area["Resultado"],
+                    columna_grupo=columna_grupo,
+                    grupo_referencia=grupo_referencia
                 )
 
-    resultado_global, tabla_contexto, grupo_referencia = perfil_crear_contexto_academico(
-        fila=fila,
-        df_evaluatec=df_evaluatec,
-        tabla_areas=tabla_areas
-    )
+                st.markdown(
+                    f"""
+                    <div style="
+                        background-color:#FFFFFF;
+                        border-left:6px solid #C62828;
+                        border:1px solid #DADADA;
+                        padding:12px 14px;
+                        border-radius:12px;
+                        margin-bottom:10px;
+                        color:#111111;
+                    ">
+                        <b>{area['Dimensión']}:</b> {area['Resultado']:.1f}%<br>
+                        <span style="color:{color_etiqueta}; font-weight:700;">
+                            {etiqueta_boxplot}
+                        </span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                
 
     nivel_alerta, dictamen_tutoria = perfil_generar_dictamen_tutoria(
         fila=fila,
@@ -4079,35 +4107,6 @@ def render_perfil_individual():
             html_punto,
             unsafe_allow_html=True
         )
-    if not tabla_contexto.empty:
-        st.markdown("### Detalle por dimensión")
-
-        tabla_vista = tabla_contexto[
-            [
-                "Dimensión",
-                "Resultado",
-                "Clasificación",
-                "Nivel"
-            ]
-        ].copy()
-
-        tabla_vista["Resultado"] = tabla_vista["Resultado"].apply(
-            lambda valor: f"{valor:.1f}%"
-        )
-
-        tabla_vista = tabla_vista.rename(
-            columns={
-                "Clasificación": "Lectura tutorial",
-                "Nivel": "Ubicación frente al grupo"
-            }
-        )
-
-        st.dataframe(
-            tabla_vista,
-            use_container_width=True,
-            hide_index=True
-        )
-
 
 
 # ============================================================
