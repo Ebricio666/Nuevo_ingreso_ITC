@@ -3747,7 +3747,88 @@ def perfil_generar_dictamen_tutoria(
     ]
 
     return nivel_alerta, puntos
+def perfil_crear_contexto_academico(fila, df_evaluatec, tabla_areas):
+    """
+    Calcula posición del estudiante contra sus compañeros.
+    No grafica el boxplot; solo usa su lógica para clasificar.
+    """
 
+    grupo = perfil_obtener_grupo_referencia(
+        fila,
+        df_evaluatec
+    )
+
+    promedio_eval = perfil_valor(
+        fila,
+        "eval_Promedio_global_individual",
+        np.nan
+    )
+
+    resultado_global = perfil_clasificar_por_cuartiles(
+        promedio_eval,
+        grupo["Promedio_global_individual"]
+    )
+
+    registros_dimensiones = []
+
+    for _, area in tabla_areas.iterrows():
+        codigo = area["Código"]
+        columna = f"Area_{codigo}"
+
+        if columna not in grupo.columns:
+            continue
+
+        resultado_dimension = perfil_clasificar_por_cuartiles(
+            area["Resultado"],
+            grupo[columna]
+        )
+
+        registros_dimensiones.append(
+            {
+                "Código": codigo,
+                "Dimensión": area["Dimensión"],
+                "Resultado": area["Resultado"],
+                "Clasificación": resultado_dimension["Clasificación"],
+                "Nivel": resultado_dimension["Nivel"],
+                "Q1": resultado_dimension["Q1"],
+                "Q2": resultado_dimension["Q2"],
+                "Q3": resultado_dimension["Q3"]
+            }
+        )
+
+    tabla_contexto = pd.DataFrame(registros_dimensiones)
+
+    return resultado_global, tabla_contexto, grupo
+
+
+def perfil_clasificar_area_boxplot(resultado, columna_grupo, grupo_referencia):
+    """
+    Clasifica una dimensión contra el grupo de referencia usando lógica de boxplot.
+    """
+
+    if columna_grupo not in grupo_referencia.columns:
+        return "Estudiante regular", "#111111"
+
+    serie = grupo_referencia[columna_grupo].dropna()
+
+    if pd.isna(resultado) or serie.empty or len(serie) < 5:
+        return "Estudiante regular", "#111111"
+
+    q1 = serie.quantile(0.25)
+    q3 = serie.quantile(0.75)
+    iqr = q3 - q1
+
+    limite_inferior = q1 - 1.5 * iqr
+    limite_superior = q3 + 1.5 * iqr
+
+    if resultado < limite_inferior:
+        return "Estudiante en riesgo de no acreditar", "#C62828"
+
+    if resultado > limite_superior:
+        return "Joven promesa", "#2E7D32"
+
+    return "Estudiante regular", "#111111"
+    
 def render_perfil_individual():
     st.title("👤 Perfil individual del aspirante")
     st.caption(
