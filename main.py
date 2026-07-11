@@ -4916,19 +4916,18 @@ def chaside_transformar_url_google_sheets(url):
 
     try:
         file_id = url.split("/d/")[1].split("/")[0]
+gid = "1491376423"
+file_id = url.split("/d/")[1].split("/")[0]
 
-        gid = "0"
-        if "gid=" in url:
-            gid = url.split("gid=")[-1].split("&")[0].split("#")[0]
+gid = "1491376423"
 
-        resourcekey = ""
-        if "resourcekey=" in url:
-            resourcekey = url.split("resourcekey=")[-1].split("&")[0].split("#")[0]
+if "gid=" in url:
+    gid = url.split("gid=")[-1].split("&")[0].split("#")[0]
 
-        url_csv = (
-            f"https://docs.google.com/spreadsheets/d/"
-            f"{file_id}/export?format=csv&gid={gid}"
-        )
+url_csv = (
+    f"https://docs.google.com/spreadsheets/d/"
+    f"{file_id}/export?format=csv&gid={gid}"
+)
 
         if resourcekey != "":
             url_csv = f"{url_csv}&resourcekey={resourcekey}"
