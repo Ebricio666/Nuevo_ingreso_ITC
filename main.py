@@ -2279,34 +2279,24 @@ def render_historial():
         "Promedio_normalizado_100"
     ].apply(hist_clasificar_rango_promedio)
 
-    columna_escuela = util_encontrar_columna(
-        df_general,
-        [
-            "Escuela de Procedencia",
-            "Escuela Procedencia",
-            "Procedencia",
-            "Escuela"
-        ]
-    )
-if columna_escuela is not None:
-    df_historial["Bachillerato_procedencia_original"] = df_historial[
-        columna_escuela
-    ].fillna("Sin dato").astype(str)
+    if columna_escuela is not None:
 
-    df_historial["Bachillerato_procedencia"] = df_historial[
-        columna_escuela
-    ].apply(hist_normalizar_escuela_procedencia)
-    
+        df_general["Bachillerato_procedencia_original"] = df_general[
+            columna_escuela
+        ].fillna("Sin dato").astype(str)
+
+        df_general["Bachillerato_procedencia"] = df_general[
+            columna_escuela
+        ].apply(hist_normalizar_escuela_procedencia)
+
         df_general["Estado_procedencia"] = df_general[
             columna_escuela
         ].apply(hist_clasificar_estado_procedencia)
 
-else:
-    df_historial["Bachillerato_procedencia_original"] = "Sin dato"
-    df_historial["Bachillerato_procedencia"] = "Sin dato"
-    df_historial["Estado_procedencia"] = "Sin dato"
-    mapa_colores_carreras = hist_crear_mapa_colores_carreras(df_general)
-
+    else:
+        df_general["Bachillerato_procedencia_original"] = "Sin dato"
+        df_general["Bachillerato_procedencia"] = "Sin dato"
+        df_general["Estado_procedencia"] = "Sin dato"
     seccion_activa = st.radio(
         "Navegación",
         [
@@ -2644,24 +2634,24 @@ def perfil_preparar_historial(contenido_archivo):
             "Escuela"
         ]
     )
-    if columna_escuela is not None:
+     if columna_escuela is not None:
 
-        df_general["Bachillerato_procedencia_original"] = df_general[
+        df_historial["Bachillerato_procedencia_original"] = df_historial[
             columna_escuela
         ].fillna("Sin dato").astype(str)
 
-        df_general["Bachillerato_procedencia"] = df_general[
+        df_historial["Bachillerato_procedencia"] = df_historial[
             columna_escuela
         ].apply(hist_normalizar_escuela_procedencia)
 
-        df_general["Estado_procedencia"] = df_general[
+        df_historial["Estado_procedencia"] = df_historial[
             columna_escuela
         ].apply(hist_clasificar_estado_procedencia)
 
     else:
-        df_general["Bachillerato_procedencia_original"] = "Sin dato"
-        df_general["Bachillerato_procedencia"] = "Sin dato"
-        df_general["Estado_procedencia"] = "Sin dato"
+        df_historial["Bachillerato_procedencia_original"] = "Sin dato"
+        df_historial["Bachillerato_procedencia"] = "Sin dato"
+        df_historial["Estado_procedencia"] = "Sin dato"
     return df_historial, df_bitacora
 
 
@@ -3903,7 +3893,7 @@ def render_perfil_individual():
     )
 
     sexo = perfil_valor(fila, "hist_Sexo_normalizado")
-escuela = perfil_valor(
+    escuela = perfil_valor(
     fila,
     "hist_Bachillerato_procedencia_original",
     perfil_valor(fila, "hist_Bachillerato_procedencia")
