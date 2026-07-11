@@ -5402,23 +5402,21 @@ def chaside_procesar_respuestas(
 # ============================================================
 # EJECUCIÓN DE LA APP
 # ============================================================
+# ============================================================
+# EJECUCIÓN DE LA APP
+# ============================================================
 
-try:
-    if modulo_activo == "📂 Carga de archivos":
-        cargar_datos_globales()
+if modulo_activo == "📂 Carga de archivos":
+    cargar_datos_globales()
 
-    elif modulo_activo == "📘 EVALUATEC 2026":
-        render_evaluatec()
+elif modulo_activo == "📘 EVALUATEC 2026":
+    render_evaluatec()
 
-    elif modulo_activo == "🎓 Historial de Aspirantes":
-        render_historial()
+elif modulo_activo == "🎓 Historial de Aspirantes":
+    render_historial()
 
-    elif modulo_activo == "🧭 Diagnóstico vocacional CHASIDE":
-        render_modulo_chaside_con_carga()
+elif modulo_activo == "🧭 Diagnóstico vocacional CHASIDE":
+    render_modulo_chaside_con_carga()
 
-    elif modulo_activo == "👤 Perfil individual":
-        render_perfil_individual()
-
-except Exception as error:
-    st.error("La app encontró un error durante la ejecución.")
-    st.exception(error)
+elif modulo_activo == "👤 Perfil individual":
+    render_perfil_individual()
