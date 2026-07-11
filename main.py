@@ -377,12 +377,27 @@ def cargar_datos_globales():
             with st.spinner("Cargando respuestas CHASIDE desde Google Forms..."):
                 df_chaside_raw = chaside_cargar_respuestas(url_chaside)
 
-                df_chaside = chaside_procesar_respuestas(
-                    df_chaside_raw,
-                    peso_intereses=peso_intereses,
-                    peso_aptitudes=peso_aptitudes
+             resultado_chaside = chaside_procesar_respuestas(
+                df_chaside_raw,
+                peso_intereses=peso_intereses,
+                peso_aptitudes=peso_aptitudes
+            )
+
+            if isinstance(resultado_chaside, tuple):
+                df_chaside = resultado_chaside[0]
+            else:
+                df_chaside = resultado_chaside
+
+            if not isinstance(df_chaside, pd.DataFrame):
+                raise ValueError(
+                    "La función chaside_procesar_respuestas no regresó un DataFrame válido."
                 )
 
+    total_chaside = int(df_chaside.shape[0])
+
+    st.success(
+        f"CHASIDE procesado correctamente: {total_chaside} respuestas."
+    )
             st.session_state["df_chaside_raw_global"] = df_chaside_raw
             st.session_state["df_chaside_global"] = df_chaside
 
