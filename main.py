@@ -3691,15 +3691,50 @@ def perfil_obtener_grupo_referencia(fila, df_evaluatec):
 def perfil_clasificar_area_boxplot(resultado, columna_grupo, grupo_referencia):
     """
     Clasifica una dimensión contra el grupo de referencia usando lógica de boxplot.
-    Solo marca extremos:
-    - Debajo del bigote inferior: riesgo de no acreditar.
-    - Arriba del bigote superior: joven promesa.
-    - Dentro de bigotes: estudiante regular.
     """
 
     if columna_grupo not in grupo_referencia.columns:
         return "Estudiante regular", "#111111"
 
+    serie = grupo_referencia[columna_grupo].dropna()
+
+    if pd.isna(resultado) or serie.empty or len(serie) < 5:
+        return "Estudiante regular", "#111111"
+
+    q1 = serie.quantile(0.25)
+    q3 = serie.quantile(0.75)
+    iqr = q3 - q1
+
+    limite_inferior = q1 - 1.5 * iqr
+    limite_superior = q3 + 1.5 * iqr
+
+    if resultado < limite_inferior:
+        return "Estudiante en riesgo de no acreditar", "#C62828"
+
+    if resultado > limite_superior:
+        return "Joven promesa", "#2E7D32"
+
+    return "Estudiante regular", "#111111"
+
+
+def perfil_texto_chaside_coloreado(texto, tipo="positivo"):
+    """Devuelve texto HTML coloreado para el dictamen CHASIDE."""
+
+    if tipo == "positivo":
+        color = "#2E7D32"
+
+    elif tipo == "negativo":
+        color = "#C62828"
+
+    else:
+        color = "#111111"
+
+    return f"<b style='color:{color};'>{texto}</b>"
+
+
+def render_perfil_individual():
+    st.title("👤 Perfil individual del aspirante")
+    
     serie = grupo_referencia[columna_grupo].dropna()
 
     if pd.isna(resultado) or serie.empty or len(serie) < 5:
@@ -4539,8 +4574,9 @@ def perfil_score_nombre_tokens(nombre_a, nombre_b):
     ).ratio()
 
     return max(score_tokens, score_texto)
+
 def perfil_interpretar_intensidad_chaside(nivel):
-    """Interpreta el nivel de intensidad CHASIDE para el dictamen tutorial."""
+    """Interpreta el nivel de intensidad CHASIDE con color."""
 
     if pd.isna(nivel):
         return "no se cuenta con un nivel de intensidad definido"
@@ -4549,28 +4585,49 @@ def perfil_interpretar_intensidad_chaside(nivel):
 
     if nivel == "Joven promesa":
         return (
-            "se interpreta como un perfil con alta congruencia vocacional, "
-            "por lo que se espera mejor adaptación académica, mayor claridad en su elección "
-            "y potencial para aprovechar actividades de alto desempeño"
+            "se interpreta como "
+            + perfil_texto_chaside_coloreado(
+                "un perfil con alta congruencia vocacional",
+                "positivo"
+            )
+            + ", por lo que se espera mejor adaptación académica, mayor claridad en su elección "
+            + "y potencial para aprovechar actividades de alto desempeño"
         )
 
     if nivel == "Perfil en transición":
         return (
-            "se interpreta como un perfil funcional, aunque todavía en proceso de consolidación; "
-            "podría presentar algunas dificultades de adaptación o acreditación en ciertas asignaturas "
-            "durante su formación académica, por lo que se recomienda acompañamiento preventivo"
+            "se interpreta como "
+            + perfil_texto_chaside_coloreado(
+                "un perfil funcional, aunque todavía en proceso de consolidación",
+                "positivo"
+            )
+            + "; podría presentar "
+            + perfil_texto_chaside_coloreado(
+                "algunas dificultades de adaptación o acreditación en ciertas asignaturas",
+                "negativo"
+            )
+            + " durante su formación académica, por lo que se recomienda acompañamiento preventivo"
         )
 
     if nivel == "Perfil en riesgo":
         return (
-            "se interpreta como una coincidencia vocacional baja; puede requerir seguimiento tutorial "
-            "más cercano para prevenir desmotivación, bajo desempeño o dudas sobre la carrera elegida"
+            "se interpreta como "
+            + perfil_texto_chaside_coloreado(
+                "una coincidencia vocacional baja",
+                "negativo"
+            )
+            + "; puede requerir seguimiento tutorial más cercano para prevenir desmotivación, "
+            + "bajo desempeño o dudas sobre la carrera elegida"
         )
 
     if nivel == "Sin perfil":
         return (
-            "se interpreta como baja correspondencia entre la carrera elegida y el perfil vocacional detectado; "
-            "se recomienda orientación vocacional complementaria y seguimiento individual"
+            "se interpreta como "
+            + perfil_texto_chaside_coloreado(
+                "baja correspondencia entre la carrera elegida y el perfil vocacional detectado",
+                "negativo"
+            )
+            + "; se recomienda orientación vocacional complementaria y seguimiento individual"
         )
 
     if nivel == "Sin nivel definido":
@@ -4579,9 +4636,92 @@ def perfil_interpretar_intensidad_chaside(nivel):
             "el resultado con cautela"
         )
 
-    return (
-        "requiere interpretación complementaria por parte del tutor o responsable académico"
+    return "requiere interpretación complementaria por parte del tutor o responsable académico"
+
+def perfil_generar_pdf_dictamen(nombre, carrera, nivel_alerta, dictamen_tutoria):
+    """Genera PDF simple del dictamen tutorial."""
+
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.enums import TA_LEFT
+    from reportlab.lib import colors
+
+    buffer = io.BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=1.8 * cm,
+        leftMargin=1.8 * cm,
+        topMargin=1.8 * cm,
+        bottomMargin=1.8 * cm
     )
+
+    styles = getSampleStyleSheet()
+
+    estilo_titulo = ParagraphStyle(
+        "TituloDictamen",
+        parent=styles["Title"],
+        fontSize=18,
+        leading=22,
+        alignment=TA_LEFT,
+        textColor=colors.HexColor("#111111"),
+        spaceAfter=12
+    )
+
+    estilo_subtitulo = ParagraphStyle(
+        "SubtituloDictamen",
+        parent=styles["Normal"],
+        fontSize=10,
+        leading=14,
+        textColor=colors.HexColor("#555555"),
+        spaceAfter=16
+    )
+
+    estilo_punto = ParagraphStyle(
+        "PuntoDictamen",
+        parent=styles["Normal"],
+        fontSize=10.5,
+        leading=16,
+        textColor=colors.HexColor("#111111"),
+        spaceAfter=12
+    )
+
+    elementos = []
+
+    elementos.append(
+        Paragraph("Dictamen tutorial", estilo_titulo)
+    )
+
+    elementos.append(
+        Paragraph(
+            f"<b>Estudiante:</b> {nombre}<br/>"
+            f"<b>Carrera:</b> {carrera}<br/>"
+            f"<b>Clasificación tutorial:</b> {nivel_alerta}",
+            estilo_subtitulo
+        )
+    )
+
+    for numero, (titulo, contenido) in enumerate(dictamen_tutoria, start=1):
+        contenido_pdf = str(contenido)
+        contenido_pdf = contenido_pdf.replace("<span", "<font")
+        contenido_pdf = contenido_pdf.replace("</span>", "</font>")
+
+        elementos.append(
+            Paragraph(
+                f"<b>{numero}. {titulo}:</b> {contenido_pdf}",
+                estilo_punto
+            )
+        )
+
+        elementos.append(Spacer(1, 6))
+
+    doc.build(elementos)
+
+    buffer.seek(0)
+    return buffer.getvalue()
     
 def render_perfil_individual():
     st.title("👤 Perfil individual del aspirante")
@@ -5052,14 +5192,66 @@ def render_perfil_individual():
                     f"<b>{carrera_mejor_chaside}</b>."
                 )
 
+            if semaforo_chaside == "Verde":
+                semaforo_html = perfil_texto_chaside_coloreado(
+                    f"{semaforo_chaside} ({diagnostico_chaside})",
+                    "positivo"
+                )
+
+            elif semaforo_chaside in ["Rojo", "Respondió siempre igual"]:
+                semaforo_html = perfil_texto_chaside_coloreado(
+                    f"{semaforo_chaside} ({diagnostico_chaside})",
+                    "negativo"
+                )
+
+            else:
+                semaforo_html = f"<b>{semaforo_chaside} ({diagnostico_chaside})</b>"
+
+            if diagnostico_chaside == "Perfil adecuado":
+                texto_adecuacion = (
+                    "lo que indica "
+                    + perfil_texto_chaside_coloreado(
+                        "un perfil vocacional adecuado para la carrera elegida",
+                        "positivo"
+                    )
+                )
+
+                texto_carrera_mejor = (
+                    f"La carrera respondida en CHASIDE fue <b>{carrera_respondida_chaside}</b>, "
+                    "y el resultado mantiene "
+                    + perfil_texto_chaside_coloreado(
+                        "correspondencia con dicha elección",
+                        "positivo"
+                    )
+                    + "."
+                )
+
+            else:
+                texto_adecuacion = (
+                    "lo que indica "
+                    + perfil_texto_chaside_coloreado(
+                        "un perfil vocacional no completamente adecuado para la carrera elegida",
+                        "negativo"
+                    )
+                )
+
+                texto_carrera_mejor = (
+                    f"La carrera respondida en CHASIDE fue <b>{carrera_respondida_chaside}</b>; "
+                    f"sin embargo, el perfil sugiere mayor afinidad hacia "
+                    + perfil_texto_chaside_coloreado(
+                        carrera_mejor_chaside,
+                        "positivo"
+                    )
+                    + "."
+                )
+
             dictamen_chaside = (
                 f"La estudiante sí contestó la escala CHASIDE, donde se detectó un perfil "
-                f"<b>{semaforo_chaside}</b> ({diagnostico_chaside}), {texto_adecuacion}. "
+                f"{semaforo_html}, {texto_adecuacion}. "
                 f"{texto_carrera_mejor} "
                 f"Por otro lado, el nivel de intensidad se detectó como "
                 f"<b>{nivel_chaside}</b>, lo cual {interpretacion_intensidad}."
-            )
-            
+            )            
             st.markdown("### Recomendación docente CHASIDE")
 
             st.info(recomendacion_chaside)
