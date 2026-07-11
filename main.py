@@ -5087,14 +5087,6 @@ def render_perfil_individual():
 # ============================================================
 # FUNCIONES BASE CHASIDE
 # ============================================================
-    
-    except ModuleNotFoundError:
-        st.warning(
-            "Para activar la descarga en PDF, agrega `reportlab` al archivo requirements.txt."
-        ) 
-# ============================================================
-# FUNCIONES BASE CHASIDE
-# ============================================================
 
 def chaside_transformar_url_google_sheets(url):
     
