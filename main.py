@@ -2301,7 +2301,6 @@ def render_historial():
         df_general["Estado_procedencia"] = df_general[
             columna_escuela
         ].apply(hist_clasificar_estado_procedencia)
-
     else:
         df_general["Bachillerato_procedencia_original"] = "Sin dato"
         df_general["Bachillerato_procedencia"] = "Sin dato"
@@ -4027,7 +4026,7 @@ def render_perfil_individual():
         nivel_alerta
     )
 
-        st.markdown("## Dictamen tutorial")
+    st.markdown("## Dictamen tutorial")
 
     st.markdown(
         f"""
@@ -4080,7 +4079,6 @@ def render_perfil_individual():
             html_punto,
             unsafe_allow_html=True
         )
-    
     if not tabla_contexto.empty:
         st.markdown("### Detalle por dimensión")
 
