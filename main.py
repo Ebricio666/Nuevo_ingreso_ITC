@@ -4901,42 +4901,65 @@ def render_perfil_individual():
 # ============================================================
 
 def chaside_transformar_url_google_sheets(url):
-    """Convierte una URL editable de Google Sheets a CSV exportable."""
+    """
+    Convierte una URL editable de Google Sheets a una URL CSV descargable.
+    Soporta enlaces con gid y resourcekey.
+    """
 
     url = str(url).strip()
 
     if "export?format=csv" in url:
         return url
 
-    if "docs.google.com/spreadsheets" in url:
-        try:
-            file_id = url.split("/d/")[1].split("/")[0]
+    if "docs.google.com/spreadsheets" not in url:
+        return url
 
-            gid = "0"
-            if "gid=" in url:
-                gid = url.split("gid=")[-1].split("&")[0].split("#")[0]
+    try:
+        file_id = url.split("/d/")[1].split("/")[0]
 
-            return (
-                f"https://docs.google.com/spreadsheets/d/"
-                f"{file_id}/export?format=csv&gid={gid}"
-            )
+        gid = "0"
+        if "gid=" in url:
+            gid = url.split("gid=")[-1].split("&")[0].split("#")[0]
 
-        except Exception:
-            raise ValueError(
-                "No se pudo transformar el enlace de Google Sheets. "
-                "Pega el enlace completo del archivo de respuestas."
-            )
+        resourcekey = ""
+        if "resourcekey=" in url:
+            resourcekey = url.split("resourcekey=")[-1].split("&")[0].split("#")[0]
 
-    return url
+        url_csv = (
+            f"https://docs.google.com/spreadsheets/d/"
+            f"{file_id}/export?format=csv&gid={gid}"
+        )
 
+        if resourcekey != "":
+            url_csv = f"{url_csv}&resourcekey={resourcekey}"
 
+        return url_csv
+
+    except Exception:
+        raise ValueError(
+            "No se pudo transformar el enlace de Google Sheets. "
+            "Pega el enlace completo de la hoja de respuestas."
+        )
 @st.cache_data(show_spinner=False)
 def chaside_cargar_respuestas(url):
-    """Carga respuestas CHASIDE desde Google Sheets."""
+    """
+    Carga respuestas CHASIDE desde Google Sheets.
+    El archivo debe estar compartido como 'Cualquier persona con el enlace puede ver'.
+    """
+
     url_csv = chaside_transformar_url_google_sheets(url)
-    return pd.read_csv(url_csv)
 
+    try:
+        return pd.read_csv(url_csv)
 
+    except Exception as error:
+        raise ValueError(
+            "No fue posible leer la hoja de respuestas. "
+            "Verifica que el Google Sheet esté compartido como "
+            "'Cualquier persona con el enlace puede ver' y que el enlace corresponda "
+            "a la pestaña de respuestas del formulario. "
+            f"Detalle técnico: {error}"
+        )
 def chaside_col_item(columnas_items, i):
     return columnas_items[i - 1]
 
