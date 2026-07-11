@@ -93,8 +93,8 @@ modulo_activo = st.sidebar.radio(
     [
         "📘 EVALUATEC 2026",
         "🎓 Historial de Aspirantes",
-        "👤 Perfil individual",
-        "🧭 Diagnóstico vocacional CHASIDE"
+        "🧭 Diagnóstico vocacional CHASIDE",
+        "👤 Perfil individual"
     ]
 )
 
@@ -4107,7 +4107,6 @@ def render_perfil_individual():
 
     st.markdown("---")
     st.markdown("## Tarjeta de información del aspirante")
-
     nombre = perfil_valor(fila, "Nombre_visible")
     carrera_historial = perfil_valor(fila, "Carrera_historial")
     carrera_eval = perfil_valor(fila, "Carrera_evaluatec")
@@ -4135,6 +4134,127 @@ def render_perfil_individual():
 
     estado = perfil_valor(fila, "hist_Estado_procedencia")
     matricula = perfil_valor(fila, "hist_ID_aspirante")
+        # ------------------------------------------------------------
+    # Validación CHASIDE dentro del perfil individual
+    # ------------------------------------------------------------
+
+    st.markdown("## Diagnóstico vocacional CHASIDE")
+
+    url_chaside_perfil = st.text_input(
+        "Enlace de respuestas CHASIDE",
+        value="https://docs.google.com/spreadsheets/u/2/d/1YHMEb5hftOZfV-CMWoUsUgJh1xmsgTY3YYwAtq1dGQA/edit?resourcekey&gid=1491376423#gid=1491376423",
+        key="perfil_url_chaside"
+    )
+
+    try:
+        df_chaside_raw_perfil = chaside_cargar_respuestas(
+            url_chaside_perfil
+        )
+
+        df_chaside_perfil = chaside_procesar_respuestas(
+            df_chaside_raw_perfil,
+            peso_intereses=0.8,
+            peso_aptitudes=0.2
+        )
+
+        df_cruce_chaside_perfil = chaside_cruzar_con_aspirantes(
+            df_aspirantes=df_historial,
+            df_chaside=df_chaside_perfil
+        )
+
+        nombre_actual_norm = chaside_normalizar_nombre(nombre)
+        carrera_actual_norm = chaside_simplificar_carrera(carrera_historial)
+
+        df_match_chaside = df_cruce_chaside_perfil.copy()
+
+        df_match_chaside["Nombre_match_actual"] = df_match_chaside[
+            "Nombre aspirantes"
+        ].apply(chaside_normalizar_nombre)
+
+        df_match_chaside["Carrera_match_actual"] = df_match_chaside[
+            "Carrera aspirantes"
+        ].apply(chaside_simplificar_carrera)
+
+        df_match_chaside = df_match_chaside[
+            (
+                df_match_chaside["Nombre_match_actual"] == nombre_actual_norm
+            )
+            |
+            (
+                (
+                    df_match_chaside["Carrera_match_actual"] == carrera_actual_norm
+                )
+                &
+                (
+                    df_match_chaside["Nombre CHASIDE"]
+                    .apply(lambda valor: chaside_score_nombre(valor, nombre))
+                    >= 0.72
+                )
+            )
+        ].copy()
+
+        if df_match_chaside.empty:
+            st.warning(
+                "No se encontró registro CHASIDE para este aspirante. "
+                "Solicita al estudiante realizar la escala en el siguiente enlace: "
+                "https://forms.gle/7WM7sJXhiGAgh2BH6"
+            )
+
+        else:
+            fila_chaside = df_match_chaside.iloc[0]
+
+            fondo_chaside, borde_chaside, titulo_chaside = chaside_color_semaforo(
+                fila_chaside["Semáforo vocacional"]
+            )
+
+            recomendacion_chaside = chaside_recomendacion_ejecutiva(
+                fila_chaside
+            )
+
+            st.markdown(
+                f"""
+                <div style="
+                    background-color:{fondo_chaside};
+                    border-left:10px solid {borde_chaside};
+                    padding:18px 22px;
+                    border-radius:16px;
+                    color:#111111;
+                    margin-bottom:16px;
+                ">
+                    <h3 style="margin-top:0; color:#111111;">{titulo_chaside}</h3>
+                    <p style="margin-bottom:0;">
+                        <b>Diagnóstico vocacional:</b> {fila_chaside['Diagnóstico vocacional']}
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            col_chaside_1, col_chaside_2 = st.columns(2)
+
+            with col_chaside_1:
+                st.write(f"**Carrera en aspirantes:** {fila_chaside['Carrera aspirantes']}")
+                st.write(f"**Carrera en CHASIDE:** {fila_chaside['Carrera CHASIDE']}")
+                st.write(f"**Estatus del cruce:** {fila_chaside['Estatus cruce']}")
+                st.write(f"**Método de cruce:** {fila_chaside['Método cruce']}")
+
+            with col_chaside_2:
+                st.write(
+                    f"**Área fuerte:** {fila_chaside['Área fuerte CHASIDE']} · "
+                    f"{fila_chaside['Área fuerte descrita']}"
+                )
+                st.write(f"**Semáforo vocacional:** {fila_chaside['Semáforo vocacional']}")
+                st.write(f"**Nivel de intensidad:** {fila_chaside['Nivel de intensidad']}")
+                st.write(f"**Carrera mejor perfilada:** {fila_chaside['Carrera mejor perfilada']}")
+
+            st.info(recomendacion_chaside)
+
+    except Exception as error:
+        st.warning(
+            "No fue posible consultar CHASIDE para este aspirante. "
+            "Solicita al estudiante realizar la escala en el siguiente enlace: "
+            "https://forms.gle/7WM7sJXhiGAgh2BH6"
+        )
     col_info, col_validacion = st.columns([2, 1])
 
     with col_info:
@@ -4330,18 +4450,17 @@ def render_perfil_individual():
 
 
 # ============================================================
-
 if modulo_activo == "📘 EVALUATEC 2026":
     render_evaluatec()
 
 elif modulo_activo == "🎓 Historial de Aspirantes":
     render_historial()
 
-elif modulo_activo == "👤 Perfil individual":
-    render_perfil_individual()
-
 elif modulo_activo == "🧭 Diagnóstico vocacional CHASIDE":
     render_modulo_chaside_con_carga()
+
+elif modulo_activo == "👤 Perfil individual":
+    render_perfil_individual()
 
 def chaside_render_reporte_ejecutivo(df_general):
     """Renderiza el reporte ejecutivo CHASIDE usando el historial ya cargado."""
