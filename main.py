@@ -3730,7 +3730,6 @@ def perfil_texto_chaside_coloreado(texto, tipo="positivo"):
         color = "#111111"
 
     return f"<b style='color:{color};'>{texto}</b>"
-
 def perfil_generar_pdf_dictamen(nombre, carrera, configuracion, dictamen_tutoria):
     """Genera PDF del dictamen tutorial."""
 
@@ -3797,11 +3796,11 @@ def perfil_generar_pdf_dictamen(nombre, carrera, configuracion, dictamen_tutoria
         )
     )
 
-dictamen_tutoria, start=1):
+    for numero, (titulo, contenido) in enumerate(
+        dictamen_tutoria,
+        start=1
+    ):
         contenido_pdf = str(contenido)
-
-        contenido_pdf = contenido_pdf.replace("<span", "<font")
-        contenido_pdf = contenido_pdf.replace("</span>", "</font>")
 
         elementos.append(
             Paragraph(
@@ -3815,8 +3814,7 @@ dictamen_tutoria, start=1):
     doc.build(elementos)
 
     buffer.seek(0)
-    return buffer.getvalue()
-    
+    return buffer.getvalue() 
 
 def perfil_color_clasificacion(clasificacion):
     """Color visual para semáforo."""
@@ -5095,12 +5093,6 @@ def render_perfil_individual():
 
     st.download_button(
         label="⬇️ Descargar dictamen tutorial en PDF",
-        data=pdf_dictamen,
-        file_name=nombre_archivo_pdf,
-        mime="application/pdf",
-        use_container_width=True
-    )
-label="⬇️ Descargar dictamen tutorial en PDF",
         data=pdf_dictamen,
         file_name=nombre_archivo_pdf,
         mime="application/pdf",
