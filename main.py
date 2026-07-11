@@ -3731,7 +3731,92 @@ def perfil_texto_chaside_coloreado(texto, tipo="positivo"):
 
     return f"<b style='color:{color};'>{texto}</b>"
 
+def perfil_generar_pdf_dictamen(nombre, carrera, configuracion, dictamen_tutoria):
+    """Genera PDF del dictamen tutorial."""
 
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.enums import TA_LEFT
+    from reportlab.lib import colors
+
+    buffer = io.BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=1.8 * cm,
+        leftMargin=1.8 * cm,
+        topMargin=1.8 * cm,
+        bottomMargin=1.8 * cm
+    )
+
+    styles = getSampleStyleSheet()
+
+    estilo_titulo = ParagraphStyle(
+        "TituloDictamen",
+        parent=styles["Title"],
+        fontSize=18,
+        leading=22,
+        alignment=TA_LEFT,
+        textColor=colors.HexColor("#111111"),
+        spaceAfter=14
+    )
+
+    estilo_info = ParagraphStyle(
+        "InfoDictamen",
+        parent=styles["Normal"],
+        fontSize=10,
+        leading=14,
+        textColor=colors.HexColor("#444444"),
+        spaceAfter=16
+    )
+
+    estilo_punto = ParagraphStyle(
+        "PuntoDictamen",
+        parent=styles["Normal"],
+        fontSize=10.5,
+        leading=16,
+        textColor=colors.HexColor("#111111"),
+        spaceAfter=12
+    )
+
+    elementos = []
+
+    elementos.append(
+        Paragraph("Dictamen tutorial", estilo_titulo)
+    )
+
+    elementos.append(
+        Paragraph(
+            f"<b>Estudiante:</b> {nombre}<br/>"
+            f"<b>Carrera:</b> {carrera}<br/>"
+            f"<b>Clasificación:</b> {configuracion['titulo']}",
+            estilo_info
+        )
+    )
+
+    for numero, (titulo, contenido) in enumerate(dictamen_tutoria, start=1):
+        contenido_pdf = str(contenido)
+
+        contenido_pdf = contenido_pdf.replace("<span", "<font")
+        contenido_pdf = contenido_pdf.replace("</span>", "</font>")
+
+        elementos.append(
+            Paragraph(
+                f"<b>{numero}. {titulo}:</b> {contenido_pdf}",
+                estilo_punto
+            )
+        )
+
+        elementos.append(Spacer(1, 8))
+
+    doc.build(elementos)
+
+    buffer.seek(0)
+    return buffer.getvalue()
+    
 def render_perfil_individual():
     st.title("👤 Perfil individual del aspirante")
     
@@ -4895,508 +4980,196 @@ def render_perfil_individual():
         "Se recomienda solicitarle responder la escala para complementar el dictamen tutorial."
     )
     # ------------------------------------------------------------
-    # Resultados CHASIDE dentro del perfil individual
+    # CHASIDE para dictamen tutorial
     # ------------------------------------------------------------
 
-    st.markdown("## Diagnóstico vocacional CHASIDE")
+    dictamen_chaside = (
+        "No se encontró registro CHASIDE para este aspirante. "
+        "Se recomienda solicitarle responder la escala para complementar el dictamen tutorial."
+    )
 
-    url_chaside_perfil = st.text_input(
-        "Enlace de respuestas CHASIDE",
-        value=st.session_state.get(
-            "url_chaside_global",
-            "https://docs.google.com/spreadsheets/d/1YHMEb5hftOZfV-CMWoUsUgJh1xmsgTY3YYwAtq1dGQA/edit?resourcekey=&gid=1491376423#gid=1491376423"
-        ),
-        key="perfil_url_chaside"
+    url_chaside_perfil = st.session_state.get(
+        "url_chaside_global",
+        "https://docs.google.com/spreadsheets/d/1YHMEb5hftOZfV-CMWoUsUgJh1xmsgTY3YYwAtq1dGQA/edit?resourcekey=&gid=1491376423#gid=1491376423"
     )
 
     try:
-        with st.spinner("Buscando resultados CHASIDE del aspirante..."):
+        df_chaside_raw_perfil = chaside_cargar_respuestas(
+            url_chaside_perfil
+        )
 
-            df_chaside_raw_perfil = chaside_cargar_respuestas(
-                url_chaside_perfil
+        resultado_chaside_perfil = chaside_procesar_respuestas(
+            df_chaside_raw_perfil,
+            peso_intereses=0.8,
+            peso_aptitudes=0.2
+        )
+
+        if isinstance(resultado_chaside_perfil, tuple):
+            df_chaside_perfil = resultado_chaside_perfil[0]
+        else:
+            df_chaside_perfil = resultado_chaside_perfil
+
+        nombre_actual_norm = perfil_normalizar_nombre(nombre)
+        carrera_actual_norm = perfil_simplificar_carrera(carrera_historial)
+
+        correos_aspirante = perfil_extraer_correos_fila(fila)
+
+        df_chaside_match = df_chaside_perfil.copy()
+
+        df_chaside_match["Nombre_match"] = df_chaside_match[
+            CHASIDE_COLUMNA_NOMBRE
+        ].apply(perfil_normalizar_nombre)
+
+        df_chaside_match["Carrera_match"] = df_chaside_match[
+            CHASIDE_COLUMNA_CARRERA
+        ].apply(perfil_simplificar_carrera)
+
+        df_chaside_match["Correo_CHASIDE_1"] = ""
+
+        if CHASIDE_COLUMNA_EMAIL_1 in df_chaside_match.columns:
+            df_chaside_match["Correo_CHASIDE_1"] = df_chaside_match[
+                CHASIDE_COLUMNA_EMAIL_1
+            ].apply(perfil_normalizar_correo)
+
+        df_chaside_match["Correo_CHASIDE_2"] = ""
+
+        if CHASIDE_COLUMNA_EMAIL_2 in df_chaside_match.columns:
+            df_chaside_match["Correo_CHASIDE_2"] = df_chaside_match[
+                CHASIDE_COLUMNA_EMAIL_2
+            ].apply(perfil_normalizar_correo)
+
+        df_chaside_match["Coincide_correo"] = df_chaside_match.apply(
+            lambda fila_ch: (
+                fila_ch["Correo_CHASIDE_1"] in correos_aspirante
+                or fila_ch["Correo_CHASIDE_2"] in correos_aspirante
+            ),
+            axis=1
+        )
+
+        df_chaside_match["Coincide_carrera"] = (
+            df_chaside_match["Carrera_match"] == carrera_actual_norm
+        )
+
+        df_chaside_match["Score_nombre"] = df_chaside_match[
+            CHASIDE_COLUMNA_NOMBRE
+        ].apply(
+            lambda valor: perfil_score_nombre_tokens(
+                valor,
+                nombre
             )
+        )
 
-            resultado_chaside_perfil = chaside_procesar_respuestas(
-                df_chaside_raw_perfil,
-                peso_intereses=0.8,
-                peso_aptitudes=0.2
-            )
+        df_chaside_match = df_chaside_match.sort_values(
+            [
+                "Coincide_correo",
+                "Coincide_carrera",
+                "Score_nombre"
+            ],
+            ascending=[
+                False,
+                False,
+                False
+            ]
+        )
 
-            if isinstance(resultado_chaside_perfil, tuple):
-                df_chaside_perfil = resultado_chaside_perfil[0]
-            else:
-                df_chaside_perfil = resultado_chaside_perfil
+        if not df_chaside_match.empty:
+            mejor_match = df_chaside_match.iloc[0]
 
-            if not isinstance(df_chaside_perfil, pd.DataFrame):
-                raise ValueError(
-                    "CHASIDE no regresó una tabla válida."
-                )
-
-            nombre_actual_norm = perfil_normalizar_nombre(nombre)
-            carrera_actual_norm = perfil_simplificar_carrera(carrera_historial)
-
-            correos_aspirante = perfil_extraer_correos_fila(fila)
-
-            df_chaside_match = df_chaside_perfil.copy()
-
-            df_chaside_match["Nombre_match"] = df_chaside_match[
-                CHASIDE_COLUMNA_NOMBRE
-            ].apply(perfil_normalizar_nombre)
-
-            df_chaside_match["Carrera_match"] = df_chaside_match[
-                CHASIDE_COLUMNA_CARRERA
-            ].apply(perfil_simplificar_carrera)
-
-            df_chaside_match["Correo_CHASIDE_1"] = ""
-
-            if CHASIDE_COLUMNA_EMAIL_1 in df_chaside_match.columns:
-                df_chaside_match["Correo_CHASIDE_1"] = df_chaside_match[
-                    CHASIDE_COLUMNA_EMAIL_1
-                ].apply(perfil_normalizar_correo)
-
-            df_chaside_match["Correo_CHASIDE_2"] = ""
-
-            if CHASIDE_COLUMNA_EMAIL_2 in df_chaside_match.columns:
-                df_chaside_match["Correo_CHASIDE_2"] = df_chaside_match[
-                    CHASIDE_COLUMNA_EMAIL_2
-                ].apply(perfil_normalizar_correo)
-
-            df_chaside_match["Coincide_correo"] = df_chaside_match.apply(
-                lambda fila_ch: (
-                    fila_ch["Correo_CHASIDE_1"] in correos_aspirante
-                    or fila_ch["Correo_CHASIDE_2"] in correos_aspirante
-                ),
-                axis=1
-            )
-
-            df_chaside_match["Coincide_carrera"] = (
-                df_chaside_match["Carrera_match"] == carrera_actual_norm
-            )
-
-            df_chaside_match["Score_nombre"] = df_chaside_match[
-                CHASIDE_COLUMNA_NOMBRE
-            ].apply(
-                lambda valor: perfil_score_nombre_tokens(
-                    valor,
-                    nombre
-                )
-            )
-
-            df_chaside_match = df_chaside_match.sort_values(
-                [
-                    "Coincide_correo",
-                    "Coincide_carrera",
-                    "Score_nombre"
-                ],
-                ascending=[
-                    False,
-                    False,
-                    False
-                ]
-            )
-
-            if df_chaside_match.empty:
-                fila_chaside = None
-
-            else:
-                mejor_match = df_chaside_match.iloc[0]
-
-                if mejor_match["Coincide_correo"]:
-                    fila_chaside = mejor_match
-
-                elif (
+            if (
+                mejor_match["Coincide_correo"]
+                or (
                     mejor_match["Coincide_carrera"]
                     and mejor_match["Score_nombre"] >= 0.45
-                ):
-                    fila_chaside = mejor_match
+                )
+                or mejor_match["Score_nombre"] >= 0.70
+            ):
+                fila_chaside = mejor_match
 
-                elif mejor_match["Score_nombre"] >= 0.70:
-                    fila_chaside = mejor_match
+                semaforo_chaside = fila_chaside["Semáforo vocacional"]
+                diagnostico_chaside = fila_chaside["Diagnóstico vocacional"]
+                nivel_chaside = fila_chaside["Nivel de intensidad"]
+                carrera_mejor_chaside = fila_chaside["Carrera_Mejor_Perfilada"]
+                carrera_respondida_chaside = fila_chaside[CHASIDE_COLUMNA_CARRERA]
 
-                else:
-                    fila_chaside = None
-        if fila_chaside is None:
-            st.warning(
-                "No se encontró registro CHASIDE para este aspirante. "
-                "Solicita al estudiante realizar la escala en el siguiente enlace: "
-                "https://forms.gle/7WM7sJXhiGAgh2BH6"
-            )
-
-        else:
-            fondo_chaside, borde_chaside, titulo_chaside = chaside_color_semaforo(
-                fila_chaside["Semáforo vocacional"]
-            )
-
-            recomendacion_chaside = chaside_recomendacion_ejecutiva_solo_link(
-                fila_chaside
-            )
-
-            area_fuerte = fila_chaside["Area_Fuerte_Ponderada"]
-            area_fuerte_desc = CHASIDE_AREAS_LONG.get(area_fuerte, "")
-
-            tabla_areas_chaside = []
-
-            for area in CHASIDE_AREAS:
-                tabla_areas_chaside.append(
-                    {
-                        "Área": area,
-                        "Descripción": CHASIDE_AREAS_LONG[area],
-                        "Intereses": fila_chaside[f"INTERES_{area}"],
-                        "Aptitudes": fila_chaside[f"APTITUD_{area}"],
-                        "Puntaje combinado": fila_chaside[f"PUNTAJE_COMBINADO_{area}"]
-                    }
+                interpretacion_intensidad = perfil_interpretar_intensidad_chaside(
+                    nivel_chaside
                 )
 
-            df_areas_chaside = pd.DataFrame(
-                tabla_areas_chaside
-            ).sort_values(
-                "Puntaje combinado",
-                ascending=False
-            )
-
-            areas_mas_fuertes = df_areas_chaside.head(3).copy()
-
-            texto_areas_fuertes = ", ".join(
-                [
-                    f"{fila_area['Área']} · {fila_area['Descripción']}"
-                    for _, fila_area in areas_mas_fuertes.iterrows()
-                ]
-            )
-
-            st.markdown(
-                f"""
-                <div style="
-                    background-color:{fondo_chaside};
-                    border-left:10px solid {borde_chaside};
-                    padding:18px 22px;
-                    border-radius:16px;
-                    color:#111111;
-                    margin-bottom:16px;
-                ">
-                    <h3 style="margin-top:0; color:#111111;">{titulo_chaside}</h3>
-                    <p style="margin-bottom:0;">
-                        <b>Diagnóstico vocacional:</b> {fila_chaside['Diagnóstico vocacional']}
-                    </p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-            col_chaside_1, col_chaside_2 = st.columns(2)
-
-            with col_chaside_1:
-                st.markdown("### Resultado CHASIDE")
-
-                st.write(
-                    f"**Carrera respondida en CHASIDE:** "
-                    f"{fila_chaside[CHASIDE_COLUMNA_CARRERA]}"
-                )
-
-                st.write(
-                    f"**Área más fuerte:** "
-                    f"{area_fuerte} · {area_fuerte_desc}"
-                )
-
-                st.write(
-                    f"**Áreas más fuertes:** {texto_areas_fuertes}"
-                )
-
-                st.write(
-                    f"**Semáforo vocacional:** "
-                    f"{fila_chaside['Semáforo vocacional']}"
-                )
-
-            with col_chaside_2:
-                st.markdown("### Interpretación docente")
-
-                st.write(
-                    f"**Nivel de intensidad:** "
-                    f"{fila_chaside['Nivel de intensidad']}"
-                )
-
-                st.write(
-                    f"**Carrera mejor perfilada:** "
-                    f"{fila_chaside['Carrera_Mejor_Perfilada']}"
-                )
-
-                st.write(
-                    f"**Coincidencia CHASIDE:** "
-                    f"{fila_chaside['Coincidencia_CHASIDE']}"
-                )
-
-                st.write(
-                    f"**Similitud de nombre:** "
-                    f"{fila_chaside['Score_nombre']:.2f}"
-                )
-            metodo_match = "Sin coincidencia"
-
-            if fila_chaside["Coincide_correo"]:
-                metodo_match = "Correo electrónico"
-
-            elif fila_chaside["Coincide_carrera"] and fila_chaside["Score_nombre"] >= 0.45:
-                metodo_match = "Carrera + similitud de nombre"
-
-            elif fila_chaside["Score_nombre"] >= 0.70:
-                metodo_match = "Similitud de nombre"
-
-            st.caption(
-                f"Coincidencia CHASIDE encontrada por: {metodo_match} "
-                f"| Score nombre: {fila_chaside['Score_nombre']:.2f}"
-            )
-            semaforo_chaside = fila_chaside["Semáforo vocacional"]
-            diagnostico_chaside = fila_chaside["Diagnóstico vocacional"]
-            nivel_chaside = fila_chaside["Nivel de intensidad"]
-            carrera_mejor_chaside = fila_chaside["Carrera_Mejor_Perfilada"]
-            carrera_respondida_chaside = fila_chaside[CHASIDE_COLUMNA_CARRERA]
-
-            interpretacion_intensidad = perfil_interpretar_intensidad_chaside(
-                nivel_chaside
-            )
-
-            if semaforo_chaside == "Verde":
-                texto_adecuacion = (
-                    "lo que indica un perfil vocacional adecuado para la carrera elegida"
-                )
-
-            elif semaforo_chaside == "Amarillo":
-                texto_adecuacion = (
-                    "lo que indica un perfil vocacional parcialmente adecuado, "
-                    "por lo que conviene dar seguimiento preventivo"
-                )
-
-            elif semaforo_chaside == "Rojo":
-                texto_adecuacion = (
-                    "lo que indica un perfil vocacional no adecuado para la carrera elegida"
-                )
-
-            elif semaforo_chaside == "Respondió siempre igual":
-                texto_adecuacion = (
-                    "aunque el patrón de respuesta sugiere baja confiabilidad, "
-                    "por lo que debe interpretarse con cautela"
-                )
-
-            else:
-                texto_adecuacion = (
-                    "por lo que se recomienda interpretar el resultado con apoyo tutorial"
-                )
-
-            if diagnostico_chaside == "Perfil adecuado":
-                texto_carrera_mejor = (
-                    f"La carrera respondida en CHASIDE fue <b>{carrera_respondida_chaside}</b>, "
-                    "y el resultado mantiene correspondencia con dicha elección."
-                )
-            else:
-                texto_carrera_mejor = (
-                    f"La carrera respondida en CHASIDE fue <b>{carrera_respondida_chaside}</b>; "
-                    f"sin embargo, el perfil sugiere mayor afinidad hacia "
-                    f"<b>{carrera_mejor_chaside}</b>."
-                )
-
-            if semaforo_chaside == "Verde":
-                semaforo_html = perfil_texto_chaside_coloreado(
-                    f"{semaforo_chaside} ({diagnostico_chaside})",
-                    "positivo"
-                )
-
-            elif semaforo_chaside in ["Rojo", "Respondió siempre igual"]:
-                semaforo_html = perfil_texto_chaside_coloreado(
-                    f"{semaforo_chaside} ({diagnostico_chaside})",
-                    "negativo"
-                )
-
-            else:
-                semaforo_html = f"<b>{semaforo_chaside} ({diagnostico_chaside})</b>"
-
-            if diagnostico_chaside == "Perfil adecuado":
-                texto_adecuacion = (
-                    "lo que indica "
-                    + perfil_texto_chaside_coloreado(
-                        "un perfil vocacional adecuado para la carrera elegida",
+                if semaforo_chaside == "Verde":
+                    semaforo_html = perfil_texto_chaside_coloreado(
+                        f"{semaforo_chaside} ({diagnostico_chaside})",
                         "positivo"
                     )
-                )
 
-                texto_carrera_mejor = (
-                    f"La carrera respondida en CHASIDE fue <b>{carrera_respondida_chaside}</b>, "
-                    "y el resultado mantiene "
-                    + perfil_texto_chaside_coloreado(
-                        "correspondencia con dicha elección",
-                        "positivo"
-                    )
-                    + "."
-                )
-
-            else:
-                texto_adecuacion = (
-                    "lo que indica "
-                    + perfil_texto_chaside_coloreado(
-                        "un perfil vocacional no completamente adecuado para la carrera elegida",
+                elif semaforo_chaside in ["Rojo", "Respondió siempre igual"]:
+                    semaforo_html = perfil_texto_chaside_coloreado(
+                        f"{semaforo_chaside} ({diagnostico_chaside})",
                         "negativo"
                     )
-                )
 
-                texto_carrera_mejor = (
-                    f"La carrera respondida en CHASIDE fue <b>{carrera_respondida_chaside}</b>; "
-                    f"sin embargo, el perfil sugiere mayor afinidad hacia "
-                    + perfil_texto_chaside_coloreado(
-                        carrera_mejor_chaside,
-                        "positivo"
+                else:
+                    semaforo_html = f"<b>{semaforo_chaside} ({diagnostico_chaside})</b>"
+
+                if diagnostico_chaside == "Perfil adecuado":
+                    texto_adecuacion = (
+                        "lo que indica "
+                        + perfil_texto_chaside_coloreado(
+                            "un perfil vocacional adecuado para la carrera elegida",
+                            "positivo"
+                        )
                     )
-                    + "."
+
+                    texto_carrera_mejor = (
+                        f"La carrera respondida en CHASIDE fue <b>{carrera_respondida_chaside}</b>, "
+                        "y el resultado mantiene "
+                        + perfil_texto_chaside_coloreado(
+                            "correspondencia con dicha elección",
+                            "positivo"
+                        )
+                        + "."
+                    )
+
+                else:
+                    texto_adecuacion = (
+                        "lo que indica "
+                        + perfil_texto_chaside_coloreado(
+                            "un perfil vocacional no completamente adecuado para la carrera elegida",
+                            "negativo"
+                        )
+                    )
+
+                    texto_carrera_mejor = (
+                        f"La carrera respondida en CHASIDE fue <b>{carrera_respondida_chaside}</b>; "
+                        f"sin embargo, el perfil sugiere mayor afinidad hacia "
+                        + perfil_texto_chaside_coloreado(
+                            carrera_mejor_chaside,
+                            "positivo"
+                        )
+                        + "."
+                    )
+
+                dictamen_chaside = (
+                    f"La estudiante sí contestó la escala CHASIDE, donde se detectó un perfil "
+                    f"{semaforo_html}, {texto_adecuacion}. "
+                    f"{texto_carrera_mejor} "
+                    f"Por otro lado, el nivel de intensidad se detectó como "
+                    f"<b>{nivel_chaside}</b>, lo cual {interpretacion_intensidad}."
                 )
 
-            dictamen_chaside = (
-                f"La estudiante sí contestó la escala CHASIDE, donde se detectó un perfil "
-                f"{semaforo_html}, {texto_adecuacion}. "
-                f"{texto_carrera_mejor} "
-                f"Por otro lado, el nivel de intensidad se detectó como "
-                f"<b>{nivel_chaside}</b>, lo cual {interpretacion_intensidad}."
-            )            
-            st.markdown("### Recomendación docente CHASIDE")
+    except Exception:
+        pass
 
-            st.info(recomendacion_chaside)
-
-            st.markdown("### Puntajes CHASIDE por área")
-
-            st.dataframe(
-                df_areas_chaside,
-                use_container_width=True,
-                hide_index=True
-            )
-    except Exception as error:
-        st.warning(
-            "No fue posible consultar CHASIDE para este aspirante. "
-            "Solicita al estudiante realizar la escala en el siguiente enlace: "
-            "https://forms.gle/7WM7sJXhiGAgh2BH6"
-        )
-        
-    st.markdown("## Información general del aspirante")
-
-    col_info, col_validacion = st.columns([2, 1])
-
-    with col_info:
-        st.markdown(f"### {nombre}")
-        st.write(f"**Matrícula/ID:** {matricula}")
-        st.write(f"**Sexo:** {sexo}")
-        st.write(f"**Carrera en Historial:** {carrera_historial}")
-        st.write(f"**Carrera en EVALUATEC:** {carrera_eval}")
-        st.write(f"**Escuela de procedencia:** {escuela}")
-        st.write(f"**Estado de procedencia:** {estado}")
-
-    with col_validacion:
-        if estatus_cruce != "Coincide en ambas bases":
-            st.metric(
-                "Estatus del cruce",
-                estatus_cruce
-            )
-
-        st.metric(
-            "Promedio bachillerato",
-            perfil_formato_porcentaje(promedio_bach)
-        )
-
-        st.metric(
-            "Promedio EVALUATEC",
-            perfil_formato_porcentaje(promedio_eval)
-        )
-
-        st.metric(
-            "Nivelación sugerida",
-            perfil_clasificar_nivelacion(promedio_eval)
-        )
+    # ------------------------------------------------------------
+    # Cálculos EVALUATEC para dictamen, sin mostrar gráficas
+    # ------------------------------------------------------------
 
     tabla_areas = perfil_obtener_areas_individuales(fila)
-    st.markdown("## Resultados EVALUATEC")
-
-    perfil_mostrar_resultados_evaluatec_individual(tabla_areas)
 
     resultado_global, tabla_contexto, grupo_referencia = perfil_crear_contexto_academico(
         fila=fila,
         df_evaluatec=df_evaluatec,
         tabla_areas=tabla_areas
-    )
-
-    if not tabla_areas.empty:
-        tabla_ordenada = tabla_areas.sort_values(
-            "Resultado",
-            ascending=True
-        )
-
-        prioridades = tabla_ordenada.head(2)
-
-        fortalezas = tabla_ordenada.tail(2).sort_values(
-            "Resultado",
-            ascending=False
-        )
-
-        col_fortalezas, col_prioridades = st.columns(2)
-
-        with col_fortalezas:
-            st.markdown("### Áreas fuertes")
-
-            for _, area in fortalezas.iterrows():
-                codigo = area["Código"]
-                columna_grupo = f"Area_{codigo}"
-
-                etiqueta_boxplot, color_etiqueta = perfil_clasificar_area_boxplot(
-                    resultado=area["Resultado"],
-                    columna_grupo=columna_grupo,
-                    grupo_referencia=grupo_referencia
-                )
-
-                st.markdown(
-                    f"""
-                    <div style="
-                        background-color:#FFFFFF;
-                        border-left:6px solid #2E7D32;
-                        border:1px solid #DADADA;
-                        padding:12px 14px;
-                        border-radius:12px;
-                        margin-bottom:10px;
-                        color:#111111;
-                    ">
-                        <b>{area['Dimensión']}:</b> {area['Resultado']:.1f}%<br>
-                        <span style="color:{color_etiqueta}; font-weight:700;">
-                            {etiqueta_boxplot}
-                        </span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-        with col_prioridades:
-            st.markdown("### Áreas prioritarias")
-
-            for _, area in prioridades.iterrows():
-                codigo = area["Código"]
-                columna_grupo = f"Area_{codigo}"
-
-                etiqueta_boxplot, color_etiqueta = perfil_clasificar_area_boxplot(
-                    resultado=area["Resultado"],
-                    columna_grupo=columna_grupo,
-                    grupo_referencia=grupo_referencia
-                )
-
-                st.markdown(
-                    f"""
-                    <div style="
-                        background-color:#FFFFFF;
-                        border-left:6px solid #C62828;
-                        border:1px solid #DADADA;
-                        padding:12px 14px;
-                        border-radius:12px;
-                        margin-bottom:10px;
-                        color:#111111;
-                    ">
-                        <b>{area['Dimensión']}:</b> {area['Resultado']:.1f}%<br>
-                        <span style="color:{color_etiqueta}; font-weight:700;">
-                            {etiqueta_boxplot}
-                        </span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                
+    )                
 
     nivel_alerta, dictamen_tutoria = perfil_generar_dictamen_tutoria(
         fila=fila,
@@ -5804,3 +5577,82 @@ elif modulo_activo == "🧭 Diagnóstico vocacional CHASIDE":
 
 elif modulo_activo == "👤 Perfil individual":
     render_perfil_individual()
+
+    configuracion = perfil_configuracion_alerta_tutoria(
+        nivel_alerta
+    )
+
+    st.markdown("## Dictamen tutorial")
+
+    st.markdown(
+        f"""
+        <div style="
+            background-color: {configuracion['color_fondo']};
+            border-left: 10px solid {configuracion['color_borde']};
+            padding: 20px 24px;
+            border-radius: 16px;
+            margin-top: 12px;
+            margin-bottom: 18px;
+            color: #111111;
+        ">
+            <h3 style="
+                margin-top: 0;
+                margin-bottom: 4px;
+                color: #111111;
+            ">
+                {configuracion['titulo']}
+            </h3>
+            <p style="margin-bottom: 0; color:#111111;">
+                Clasificación general para orientar el seguimiento tutorial.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    for numero, (titulo, contenido) in enumerate(
+        dictamen_tutoria,
+        start=1
+    ):
+
+        html_punto = f'''
+        <div style="
+            background-color: #FFFFFF;
+            border: 1px solid #F0D6D6;
+            border-left: 6px solid {configuracion["color_borde"]};
+            padding: 14px 18px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            color: #111111;
+            font-size: 17px;
+            line-height: 1.55;
+        ">
+            <b style="color:#111111;">{numero}. {titulo}:</b> {contenido}
+        </div>
+        '''
+
+        st.markdown(
+            html_punto,
+            unsafe_allow_html=True
+        )
+
+    pdf_dictamen = perfil_generar_pdf_dictamen(
+        nombre=nombre,
+        carrera=carrera_historial,
+        configuracion=configuracion,
+        dictamen_tutoria=dictamen_tutoria
+    )
+
+    nombre_archivo_pdf = (
+        "dictamen_tutorial_"
+        + perfil_normalizar_nombre(nombre).lower().replace(" ", "_")
+        + ".pdf"
+    )
+
+    st.download_button(
+        label="⬇️ Descargar dictamen tutorial en PDF",
+        data=pdf_dictamen,
+        file_name=nombre_archivo_pdf,
+        mime="application/pdf",
+        use_container_width=True
+    )
