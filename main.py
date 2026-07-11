@@ -3797,7 +3797,7 @@ def perfil_generar_pdf_dictamen(nombre, carrera, configuracion, dictamen_tutoria
         )
     )
 
-    for numero, (titulo, contenido) in enumerate(dictamen_tutoria, start=1):
+dictamen_tutoria, start=1):
         contenido_pdf = str(contenido)
 
         contenido_pdf = contenido_pdf.replace("<span", "<font")
@@ -5059,6 +5059,47 @@ def render_perfil_individual():
         start=1
     ):
 
+        html_punto = f'''
+        <div style="
+            background-color: #FFFFFF;
+            border: 1px solid #F0D6D6;
+            border-left: 6px solid {configuracion["color_borde"]};
+            padding: 14px 18px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            color: #111111;
+            font-size: 17px;
+            line-height: 1.55;
+        ">
+            <b style="color:#111111;">{numero}. {titulo}:</b> {contenido}
+        </div>
+        '''
+
+        st.markdown(
+            html_punto,
+            unsafe_allow_html=True
+        )
+
+    pdf_dictamen = perfil_generar_pdf_dictamen(
+        nombre=nombre,
+        carrera=carrera_historial,
+        configuracion=configuracion,
+        dictamen_tutoria=dictamen_tutoria
+    )
+
+    nombre_archivo_pdf = (
+        "dictamen_tutorial_"
+        + perfil_normalizar_nombre(nombre).lower().replace(" ", "_")
+        + ".pdf"
+    )
+
+    st.download_button(
+        label="⬇️ Descargar dictamen tutorial en PDF",
+        data=pdf_dictamen,
+        file_name=nombre_archivo_pdf,
+        mime="application/pdf",
+        use_container_width=True
+    )
         html_punto = f'''
         <div style="
             background-color: #FFFFFF;
