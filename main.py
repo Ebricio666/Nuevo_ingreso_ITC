@@ -3489,6 +3489,7 @@ def perfil_describir_dimensiones(tabla_contexto):
         "texto_prioritarias": descripcion_prioritaria,
         "texto_fortalezas": descripcion_fortaleza
     }
+
 def perfil_generar_dictamen_tutoria(
     fila,
     df_historial,
@@ -3497,7 +3498,7 @@ def perfil_generar_dictamen_tutoria(
     tabla_contexto
 ):
     """
-    Genera dictamen descriptivo para tutoría en formato de viñetas.
+    Genera dictamen descriptivo para tutoría en formato ordenado.
     """
 
     nombre = perfil_valor(
@@ -3568,7 +3569,7 @@ def perfil_generar_dictamen_tutoria(
 
     if tabla_contexto.empty:
         texto_oportunidad = "Validar manualmente los resultados del estudiante."
-
+        texto_fortalezas = "Sin información suficiente."
         texto_dimensiones = (
             "No se cuenta con información suficiente para comparar "
             "las dimensiones del EVALUATEC."
@@ -3602,42 +3603,46 @@ def perfil_generar_dictamen_tutoria(
         )
 
         texto_dimensiones = (
-            f"Las áreas con mejor desempeño fueron <b>{texto_fortalezas}</b>. "
-            f"Las áreas de oportunidad principales fueron <b>{texto_oportunidad}</b>."
+            f"Las áreas con mejor desempeño fueron **{texto_fortalezas}**. "
+            f"Las áreas de oportunidad principales fueron **{texto_oportunidad}**."
         )
 
-    texto = f"""
-    <ol style="margin-top: 8px; padding-left: 24px;">
-        <li style="margin-bottom: 14px;">
-            <b>Nombre y procedencia:</b> {nombre} proviene de 
-            <b>{escuela}</b>, con procedencia registrada en 
-            <b>{estado}</b>. Su promedio de bachillerato es 
-            <b>{perfil_formato_porcentaje(promedio_bach)}</b>, el cual es 
-            {comparativo_bach} del grupo de referencia 
-            (<b>{perfil_formato_porcentaje(promedio_bach_grupo)}</b>).
-        </li>
+    puntos = [
+        (
+            "Nombre y procedencia",
+            (
+                f"{nombre} proviene de **{escuela}**, con procedencia registrada en "
+                f"**{estado}**. Su promedio de bachillerato es "
+                f"**{perfil_formato_porcentaje(promedio_bach)}**, el cual es "
+                f"{comparativo_bach} del grupo de referencia "
+                f"(**{perfil_formato_porcentaje(promedio_bach_grupo)}**)."
+            )
+        ),
+        (
+            "Resultado global EVALUATEC",
+            (
+                f"Obtuvo una calificación global de "
+                f"**{perfil_formato_porcentaje(promedio_eval)}**. Este resultado es "
+                f"{comparativo_eval} respecto al promedio de sus compañeros "
+                f"(**{perfil_formato_porcentaje(promedio_eval_grupo)}**)."
+            )
+        ),
+        (
+            "Dimensiones EVALUATEC",
+            texto_dimensiones
+        ),
+        (
+            "Seguimiento y acompañamiento",
+            (
+                f"Se recomienda implementar acciones en las áreas de oportunidad "
+                f"identificadas, especialmente en **{texto_oportunidad}**. "
+                f"Como acciones preventivas y correctivas se sugiere: "
+                f"{acciones_prevencion} {acciones_correccion}"
+            )
+        )
+    ]
 
-        <li style="margin-bottom: 14px;">
-            <b>Resultado global EVALUATEC:</b> obtuvo una calificación global de 
-            <b>{perfil_formato_porcentaje(promedio_eval)}</b>. Este resultado es 
-            {comparativo_eval} respecto al promedio de sus compañeros 
-            (<b>{perfil_formato_porcentaje(promedio_eval_grupo)}</b>).
-        </li>
-
-        <li style="margin-bottom: 14px;">
-            <b>Dimensiones EVALUATEC:</b> {texto_dimensiones}
-        </li>
-
-        <li style="margin-bottom: 14px;">
-            <b>Seguimiento y acompañamiento:</b> se recomienda implementar acciones 
-            en las áreas de oportunidad identificadas, especialmente en 
-            <b>{texto_oportunidad}</b>. Como acciones preventivas y correctivas se sugiere: 
-            {acciones_prevencion} {acciones_correccion}
-        </li>
-    </ol>
-    """
-
-    return nivel_alerta, texto
+    return nivel_alerta, puntos
 
 
 def render_perfil_individual():
@@ -3934,35 +3939,53 @@ def render_perfil_individual():
     )
     st.markdown("## Dictamen tutorial")
 
-    html_dictamen = f"""
-    <div style="
-        background-color: {configuracion['color_fondo']};
-        border-left: 10px solid {configuracion['color_borde']};
-        padding: 24px 28px;
-        border-radius: 16px;
-        margin-top: 12px;
-        margin-bottom: 24px;
-        color: {configuracion['color_texto']};
-        font-size: 18px;
-        line-height: 1.65;
-    ">
-        <h3 style="
-            margin-top: 0;
-            margin-bottom: 12px;
+    st.markdown(
+        f"""
+        <div style="
+            background-color: {configuracion['color_fondo']};
+            border-left: 10px solid {configuracion['color_borde']};
+            padding: 20px 24px;
+            border-radius: 16px;
+            margin-top: 12px;
+            margin-bottom: 18px;
             color: {configuracion['color_texto']};
         ">
-            {configuracion['titulo']}
-        </h3>
-
-        {dictamen_tutoria}
-    </div>
-    """
-
-    st.markdown(
-        html_dictamen,
+            <h3 style="
+                margin-top: 0;
+                margin-bottom: 4px;
+                color: {configuracion['color_texto']};
+            ">
+                {configuracion['titulo']}
+            </h3>
+            <p style="margin-bottom: 0;">
+                Clasificación general para orientar el seguimiento tutorial.
+            </p>
+        </div>
+        """,
         unsafe_allow_html=True
     )
 
+    for numero, (titulo, contenido) in enumerate(
+        dictamen_tutoria,
+        start=1
+    ):
+        st.markdown(
+            f"""
+            <div style="
+                background-color: {configuracion['color_fondo']};
+                border-left: 6px solid {configuracion['color_borde']};
+                padding: 14px 18px;
+                border-radius: 12px;
+                margin-bottom: 10px;
+                color: {configuracion['color_texto']};
+                font-size: 17px;
+                line-height: 1.55;
+            ">
+                <b>{numero}. {titulo}:</b> {contenido}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
     
     if not tabla_contexto.empty:
         st.markdown("### Detalle por dimensión")
