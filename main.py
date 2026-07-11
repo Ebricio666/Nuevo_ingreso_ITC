@@ -2540,7 +2540,6 @@ def perfil_encontrar_nombre_evaluatec(df):
 
     return util_encontrar_columna(df, posibles_columnas)
 
-
 def perfil_preparar_historial(contenido_archivo):
     """Procesa Historial y prepara nombre, carrera y datos generales."""
 
@@ -2561,6 +2560,7 @@ def perfil_preparar_historial(contenido_archivo):
         )
         return pd.DataFrame(), df_bitacora
 
+    # Construir nombre completo visible
     if col_apellido_materno is None:
         df_historial["Nombre_completo_visible"] = (
             df_historial[col_apellido_paterno].fillna("").astype(str)
@@ -2580,15 +2580,18 @@ def perfil_preparar_historial(contenido_archivo):
         "Nombre_completo_visible"
     ].apply(perfil_nombre_visible)
 
-    # Eliminar filas que no son estudiantes, por ejemplo renglones de Aula
-df_historial = df_historial[
-    df_historial["Nombre_match"].notna()
-    &
-    (df_historial["Nombre_match"].str.strip() != "")
-    &
-    (~df_historial["Nombre_match"].str.contains("AULA", na=False))
-].copy()
+    df_historial["Nombre_match"] = df_historial[
+        "Nombre_completo_visible"
+    ].apply(perfil_normalizar_nombre)
 
+    # Eliminar filas que no son estudiantes, por ejemplo renglones de Aula
+    df_historial = df_historial[
+        df_historial["Nombre_match"].notna()
+        &
+        (df_historial["Nombre_match"].str.strip() != "")
+        &
+        (~df_historial["Nombre_match"].str.contains("AULA", na=False))
+    ].copy()
 
     df_historial["Letra_apellido"] = df_historial[
         col_apellido_paterno
@@ -2652,8 +2655,7 @@ df_historial = df_historial[
         df_historial["Bachillerato_procedencia"] = "Sin dato"
         df_historial["Estado_procedencia"] = "Sin dato"
 
-    return df_historial, df_bitacora
-
+    return df_historial, df_bitacora     
 
 def perfil_preparar_evaluatec(archivos_subidos):
     """Procesa los 3 CSV de EVALUATEC y prepara nombre normalizado."""
