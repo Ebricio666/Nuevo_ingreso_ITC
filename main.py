@@ -91,13 +91,13 @@ st.sidebar.title("🎓 Panel de navegación")
 modulo_activo = st.sidebar.radio(
     "Selecciona un módulo",
     [
+        "📂 Carga de archivos",
         "📘 EVALUATEC 2026",
         "🎓 Historial de Aspirantes",
         "🧭 Diagnóstico vocacional CHASIDE",
         "👤 Perfil individual"
     ]
-)
-
+)    
 # ============================================================
 # UTILIDADES GENERALES COMPARTIDAS
 # ============================================================
@@ -140,7 +140,25 @@ def util_limpiar_texto_visible(valor):
 
     texto = str(valor).replace("\n", " ")
     return re.sub(r"\s+", " ", texto).strip()
+def util_encontrar_columna(df, posibles_nombres):
+    """Busca una columna ignorando mayúsculas, acentos y espacios."""
 
+    columnas_normalizadas = {
+        util_limpiar_texto(columna): columna
+        for columna in df.columns
+    }
+
+    for posible in posibles_nombres:
+        posible_limpio = util_limpiar_texto(posible)
+
+        if posible_limpio in columnas_normalizadas:
+            return columnas_normalizadas[posible_limpio]
+
+        for columna_limpia, columna_original in columnas_normalizadas.items():
+            if posible_limpio in columna_limpia:
+                return columna_original
+
+    return None
 def dataframe_a_excel_bytes(dic_hojas):
     """Convierte uno o varios DataFrames a archivo Excel en memoria."""
 
@@ -159,6 +177,261 @@ def dataframe_a_excel_bytes(dic_hojas):
     output.seek(0)
     return output.getvalue()
 
+
+def cargar_datos_globales():
+    """
+    Carga centralizada de Historial, EVALUATEC y CHASIDE.
+    Guarda todo en st.session_state para no cargar archivos varias veces.
+    """
+
+    st.title("📂 Carga de archivos")
+    st.caption(
+        "Carga aquí las bases principales. Después podrás navegar entre módulos "
+        "sin volver a subir los archivos."
+    )
+
+    # ------------------------------------------------------------
+    # Historial
+    # ------------------------------------------------------------
+
+    st.markdown("## 1. Historial de Aspirantes")
+
+    archivo_historial = st.file_uploader(
+        "Carga el Excel de Historial de Aspirantes",
+        type=["xlsx", "xls"],
+        key="global_historial_archivo"
+    )
+
+    if archivo_historial is not None:
+        try:
+            with st.spinner("Procesando Historial de Aspirantes..."):
+                df_historial, df_bitacora = hist_procesar_archivo_excel(
+                    archivo_historial.getvalue()
+                )
+
+            if df_historial.empty:
+                st.error("No se pudieron identificar registros de aspirantes.")
+                st.dataframe(df_bitacora, use_container_width=True)
+
+            else:
+                columna_sexo = util_encontrar_columna(
+                    df_historial,
+                    ["Género", "Genero", "Sexo"]
+                )
+
+                if columna_sexo is not None:
+                    df_historial["Sexo_normalizado"] = df_historial[
+                        columna_sexo
+                    ].apply(hist_normalizar_sexo)
+                else:
+                    df_historial["Sexo_normalizado"] = "Sin especificar"
+
+                df_historial["Rango_promedio"] = df_historial[
+                    "Promedio_normalizado_100"
+                ].apply(hist_clasificar_rango_promedio)
+
+                columna_escuela = util_encontrar_columna(
+                    df_historial,
+                    [
+                        "Escuela de Procedencia",
+                        "Escuela Procedencia",
+                        "Procedencia",
+                        "Escuela"
+                    ]
+                )
+
+                if columna_escuela is not None:
+                    df_historial["Bachillerato_procedencia_original"] = df_historial[
+                        columna_escuela
+                    ].fillna("Sin dato").astype(str)
+
+                    df_historial["Bachillerato_procedencia"] = df_historial[
+                        columna_escuela
+                    ].apply(hist_normalizar_escuela_procedencia)
+
+                    df_historial["Estado_procedencia"] = df_historial[
+                        columna_escuela
+                    ].apply(hist_clasificar_estado_procedencia)
+
+                else:
+                    df_historial["Bachillerato_procedencia_original"] = "Sin dato"
+                    df_historial["Bachillerato_procedencia"] = "Sin dato"
+                    df_historial["Estado_procedencia"] = "Sin dato"
+
+                st.session_state["df_historial_global"] = df_historial
+                st.session_state["df_bitacora_historial"] = df_bitacora
+
+                st.success(
+                    f"Historial cargado correctamente: {len(df_historial):,} aspirantes."
+                )
+
+        except Exception as error:
+            st.error(f"No fue posible procesar el Historial: {error}")
+
+    elif "df_historial_global" in st.session_state:
+        st.success(
+            f"Historial ya cargado: {len(st.session_state['df_historial_global']):,} aspirantes."
+        )
+    else:
+        st.info("Aún no se ha cargado el Historial de Aspirantes.")
+
+    st.markdown("---")
+
+    # ------------------------------------------------------------
+    # EVALUATEC
+    # ------------------------------------------------------------
+
+    st.markdown("## 2. EVALUATEC 2026")
+
+    archivos_eval = st.file_uploader(
+        "Carga los 3 archivos CSV de EVALUATEC",
+        type=["csv"],
+        accept_multiple_files=True,
+        key="global_eval_archivos"
+    )
+
+    if archivos_eval:
+        if len(archivos_eval) != 3:
+            st.warning(
+                f"Cargaste {len(archivos_eval)} archivo(s). Se requieren exactamente 3."
+            )
+        else:
+            datos_por_bloque = {}
+            errores = []
+
+            for archivo in archivos_eval:
+                try:
+                    df_archivo, areas_detectadas = eval_procesar_archivo(
+                        archivo
+                    )
+
+                    bloque = df_archivo["Bloque"].iloc[0]
+
+                    datos_por_bloque[bloque] = {
+                        "df": df_archivo,
+                        "areas": areas_detectadas,
+                        "archivo": archivo.name
+                    }
+
+                except Exception as error:
+                    errores.append(f"{archivo.name}: {error}")
+
+            if errores:
+                for error in errores:
+                    st.error(error)
+
+            if datos_por_bloque:
+                st.session_state["datos_eval_global"] = datos_por_bloque
+
+                st.success(
+                    f"EVALUATEC cargado correctamente: {len(datos_por_bloque)} bloques."
+                )
+
+    elif "datos_eval_global" in st.session_state:
+        st.success(
+            f"EVALUATEC ya cargado: {len(st.session_state['datos_eval_global'])} bloques."
+        )
+    else:
+        st.info("Aún no se han cargado los archivos EVALUATEC.")
+
+    st.markdown("---")
+
+    # ------------------------------------------------------------
+    # CHASIDE
+    # ------------------------------------------------------------
+
+    st.markdown("## 3. CHASIDE")
+
+    url_chaside = st.text_input(
+        "Pega el enlace de respuestas de Google Forms / Google Sheets",
+        value=st.session_state.get(
+            "url_chaside_global",
+            "https://docs.google.com/spreadsheets/u/2/d/1YHMEb5hftOZfV-CMWoUsUgJh1xmsgTY3YYwAtq1dGQA/edit?resourcekey&gid=1491376423#gid=1491376423"
+        ),
+        key="global_url_chaside"
+    )
+
+    st.session_state["url_chaside_global"] = url_chaside
+
+    peso_intereses = st.slider(
+        "Peso de intereses",
+        min_value=0.0,
+        max_value=1.0,
+        value=st.session_state.get("peso_intereses_chaside", 0.8),
+        step=0.1,
+        key="global_peso_intereses_chaside"
+    )
+
+    peso_aptitudes = round(1 - peso_intereses, 2)
+
+    st.session_state["peso_intereses_chaside"] = peso_intereses
+    st.session_state["peso_aptitudes_chaside"] = peso_aptitudes
+
+    st.caption(
+        f"Pesos activos → Intereses: {peso_intereses:.1f} | "
+        f"Aptitudes: {peso_aptitudes:.1f}"
+    )
+
+    if st.button("Procesar respuestas CHASIDE", use_container_width=True):
+        try:
+            with st.spinner("Cargando respuestas CHASIDE desde Google Forms..."):
+                df_chaside_raw = chaside_cargar_respuestas(url_chaside)
+
+                df_chaside = chaside_procesar_respuestas(
+                    df_chaside_raw,
+                    peso_intereses=peso_intereses,
+                    peso_aptitudes=peso_aptitudes
+                )
+
+            st.session_state["df_chaside_raw_global"] = df_chaside_raw
+            st.session_state["df_chaside_global"] = df_chaside
+
+            st.success(
+                f"CHASIDE cargado correctamente: {len(df_chaside):,} respuestas."
+            )
+
+        except Exception as error:
+            st.error(f"No fue posible cargar/procesar CHASIDE: {error}")
+
+    elif "df_chaside_global" in st.session_state:
+        st.success(
+            f"CHASIDE ya cargado: {len(st.session_state['df_chaside_global']):,} respuestas."
+        )
+    else:
+        st.info("Aún no se han procesado las respuestas CHASIDE.")
+
+    st.markdown("---")
+
+    # ------------------------------------------------------------
+    # Estado general
+    # ------------------------------------------------------------
+
+    st.markdown("## Estado general de carga")
+
+    estado_historial = (
+        "✅ Cargado"
+        if "df_historial_global" in st.session_state
+        else "❌ Pendiente"
+    )
+
+    estado_eval = (
+        "✅ Cargado"
+        if "datos_eval_global" in st.session_state
+        else "❌ Pendiente"
+    )
+
+    estado_chaside = (
+        "✅ Cargado"
+        if "df_chaside_global" in st.session_state
+        else "❌ Pendiente"
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Historial", estado_historial)
+    col2.metric("EVALUATEC", estado_eval)
+    col3.metric("CHASIDE", estado_chaside)
+    
 # ============================================================
 # ============================================================
 # MÓDULO 1: EVALUATEC 2026
@@ -4450,17 +4723,6 @@ def render_perfil_individual():
 
 
 # ============================================================
-if modulo_activo == "📘 EVALUATEC 2026":
-    render_evaluatec()
-
-elif modulo_activo == "🎓 Historial de Aspirantes":
-    render_historial()
-
-elif modulo_activo == "🧭 Diagnóstico vocacional CHASIDE":
-    render_modulo_chaside_con_carga()
-
-elif modulo_activo == "👤 Perfil individual":
-    render_perfil_individual()
 
 def chaside_render_reporte_ejecutivo(df_general):
     """Renderiza el reporte ejecutivo CHASIDE usando el historial ya cargado."""
@@ -4671,3 +4933,22 @@ def chaside_render_reporte_ejecutivo(df_general):
             "La carrera registrada en aspirantes no coincide plenamente con la carrera reportada en CHASIDE. "
             "Conviene validar si hubo cambio de carrera o diferencia de captura."
         )
+
+# ============================================================
+# EJECUCIÓN DE LA APP
+# ============================================================
+
+if modulo_activo == "📂 Carga de archivos":
+    cargar_datos_globales()
+
+elif modulo_activo == "📘 EVALUATEC 2026":
+    render_evaluatec()
+
+elif modulo_activo == "🎓 Historial de Aspirantes":
+    render_historial()
+
+elif modulo_activo == "🧭 Diagnóstico vocacional CHASIDE":
+    render_modulo_chaside_con_carga()
+
+elif modulo_activo == "👤 Perfil individual":
+    render_perfil_individual()
