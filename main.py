@@ -3811,7 +3811,7 @@ def render_perfil_individual():
         df_evaluatec=df_evaluatec
     )
 
-      st.markdown("## Búsqueda del aspirante")
+    st.markdown("## Búsqueda del aspirante")
 
     sistema_busqueda = st.radio(
         "Selecciona sistema de búsqueda",
@@ -3821,7 +3821,7 @@ def render_perfil_individual():
         ],
         horizontal=True
     )
-
+    
     df_busqueda = df_cruzado.copy()
 
     if sistema_busqueda == "🔤 Búsqueda por inicial del apellido":
