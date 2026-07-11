@@ -2803,21 +2803,30 @@ def chaside_render_reporte_ejecutivo_solo_link():
         f"Pesos activos → Intereses: {peso_intereses:.1f} | "
         f"Aptitudes: {peso_aptitudes:.1f}"
     )
-
     try:
         with st.spinner("Cargando y procesando respuestas CHASIDE..."):
+
             df_chaside_raw = chaside_cargar_respuestas(url_chaside)
 
-            df_chaside = chaside_procesar_respuestas(
+            resultado_chaside = chaside_procesar_respuestas(
                 df_chaside_raw,
                 peso_intereses=peso_intereses,
                 peso_aptitudes=peso_aptitudes
             )
 
+            if isinstance(resultado_chaside, tuple):
+                df_chaside = resultado_chaside[0]
+            else:
+                df_chaside = resultado_chaside
+
+            if not isinstance(df_chaside, pd.DataFrame):
+                raise ValueError(
+                    "La función chaside_procesar_respuestas no regresó un DataFrame válido."
+                )
+
     except Exception as error:
         st.error(f"No fue posible procesar CHASIDE: {error}")
         return
-
     total_chaside = int(df_chaside.shape[0])
 
     st.success(
