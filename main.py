@@ -3733,7 +3733,7 @@ def perfil_generar_dictamen_tutoria(
     grupo_referencia,
     resultado_global,
     tabla_contexto
-):
+)
     """
     Genera texto descriptivo para tutoría.
     """
