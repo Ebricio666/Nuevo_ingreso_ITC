@@ -2580,9 +2580,15 @@ def perfil_preparar_historial(contenido_archivo):
         "Nombre_completo_visible"
     ].apply(perfil_nombre_visible)
 
-    df_historial["Nombre_match"] = df_historial[
-        "Nombre_completo_visible"
-    ].apply(perfil_normalizar_nombre)
+    # Eliminar filas que no son estudiantes, por ejemplo renglones de Aula
+df_historial = df_historial[
+    df_historial["Nombre_match"].notna()
+    &
+    (df_historial["Nombre_match"].str.strip() != "")
+    &
+    (~df_historial["Nombre_match"].str.contains("AULA", na=False))
+].copy()
+
 
     df_historial["Letra_apellido"] = df_historial[
         col_apellido_paterno
@@ -2705,96 +2711,30 @@ def perfil_preparar_evaluatec(archivos_subidos):
 
     return df_evaluatec, errores
 
+def crear_etiqueta_selector(fila):
+    nombre = fila["Nombre_visible"]
+    carrera = fila["Carrera_referencia"]
+    estatus = fila["Estatus_cruce"]
 
-def perfil_crear_base_cruzada(df_historial, df_evaluatec):
-    """Cruza Historial y EVALUATEC usando nombre como llave principal."""
+    if estatus == "Coincide en ambas bases":
+        return f"{nombre} · {carrera}"
 
-    hist = df_historial.copy()
-    eval_df = df_evaluatec.copy()
+    if estatus == "Coincide por nombre, carrera distinta":
+        return f"{nombre} · {carrera} · Validar carrera"
 
-    hist = hist.add_prefix("hist_")
-    eval_df = eval_df.add_prefix("eval_")
+    if estatus == "Solo en Historial":
+        return f"{nombre} · {carrera} · Solo Historial"
 
-    df_cruzado = hist.merge(
-        eval_df,
-        left_on="hist_Nombre_match",
-        right_on="eval_Nombre_match",
-        how="outer",
-        indicator=True
-    )
+    if estatus == "Solo en EVALUATEC":
+        return f"{nombre} · {carrera} · Solo EVALUATEC"
 
-    df_cruzado["Nombre_visible"] = df_cruzado[
-        "hist_Nombre_completo_visible"
-    ].combine_first(
-        df_cruzado["eval_Nombre_completo_visible"]
-    )
+    return f"{nombre} · {carrera}"
 
-    df_cruzado["Carrera_historial"] = df_cruzado[
-        "hist_Carrera"
-    ]
 
-    df_cruzado["Carrera_evaluatec"] = df_cruzado[
-        "eval_Carrera_normalizada"
-    ]
-
-    df_cruzado["Carrera_referencia"] = df_cruzado[
-        "Carrera_historial"
-    ].combine_first(
-        df_cruzado["Carrera_evaluatec"]
-    )
-
-    df_cruzado["Letra_apellido"] = df_cruzado[
-        "hist_Letra_apellido"
-    ]
-
-    df_cruzado["Letra_apellido"] = df_cruzado[
-        "Letra_apellido"
-    ].fillna(
-        df_cruzado["Nombre_visible"]
-        .fillna("")
-        .astype(str)
-        .str[:1]
-        .str.upper()
-    )
-
-    df_cruzado["Carrera_coincide"] = (
-        df_cruzado["hist_Carrera_match"]
-        == df_cruzado["eval_Carrera_match"]
-    )
-
-    df_cruzado["Estatus_cruce"] = np.select(
-        [
-            df_cruzado["_merge"] == "both",
-            df_cruzado["_merge"] == "left_only",
-            df_cruzado["_merge"] == "right_only"
-        ],
-        [
-            "Coincide en ambas bases",
-            "Solo en Historial",
-            "Solo en EVALUATEC"
-        ],
-        default="Sin clasificar"
-    )
-
-    df_cruzado.loc[
-        (
-            df_cruzado["_merge"] == "both"
-        )
-        &
-        (
-            df_cruzado["Carrera_coincide"] == False
-        ),
-        "Estatus_cruce"
-    ] = "Coincide por nombre, carrera distinta"
-
-    df_cruzado["Etiqueta_selector"] = df_cruzado.apply(
-        lambda fila: (
-            f"{fila['Nombre_visible']} · "
-            f"{fila['Carrera_referencia']} · "
-            f"{fila['Estatus_cruce']}"
-        ),
-        axis=1
-    )
+df_cruzado["Etiqueta_selector"] = df_cruzado.apply(
+    crear_etiqueta_selector,
+    axis=1
+)
 
     return df_cruzado
 
@@ -3003,7 +2943,367 @@ def perfil_generar_recomendaciones(fila, tabla_areas):
 
 def perfil_mostrar_resultados_evaluatec_individual(tabla_areas):
     """Muestra gráfica individual de áreas EVALUATEC."""
+def perfil_clasificar_por_cuartiles(valor, serie_referencia):
+    """
+    Clasifica al estudiante contra su grupo de referencia.
+    Usa lógica de boxplot:
+    - Atípico alto: joven promesa
+    - Atípico bajo: alto riesgo
+    - Dentro de cuartiles: semáforo de acompañamiento
+    """
 
+    serie = pd.Series(serie_referencia).dropna()
+
+    if pd.isna(valor) or serie.empty or len(serie) < 5:
+        return {
+            "Clasificación": "Sin referencia suficiente",
+            "Nivel": "Sin dato",
+            "Q1": np.nan,
+            "Q2": np.nan,
+            "Q3": np.nan,
+            "LI": np.nan,
+            "LS": np.nan
+        }
+
+    q1 = serie.quantile(0.25)
+    q2 = serie.quantile(0.50)
+    q3 = serie.quantile(0.75)
+    iqr = q3 - q1
+
+    limite_inferior = q1 - 1.5 * iqr
+    limite_superior = q3 + 1.5 * iqr
+
+    if valor < limite_inferior:
+        clasificacion = "Perfil en alto riesgo de no acreditar el semestre"
+        nivel = "Atípico bajo"
+
+    elif valor > limite_superior:
+        clasificacion = "Joven promesa"
+        nivel = "Atípico alto"
+
+    elif valor < q1:
+        clasificacion = "Riesgo preventivo"
+        nivel = "Debajo de Q1"
+
+    elif valor < q2:
+        clasificacion = "Seguimiento académico"
+        nivel = "Entre Q1 y Q2"
+
+    elif valor < q3:
+        clasificacion = "Desempeño esperado"
+        nivel = "Entre Q2 y Q3"
+
+    else:
+        clasificacion = "Fortaleza académica"
+        nivel = "Arriba de Q3"
+
+    return {
+        "Clasificación": clasificacion,
+        "Nivel": nivel,
+        "Q1": q1,
+        "Q2": q2,
+        "Q3": q3,
+        "LI": limite_inferior,
+        "LS": limite_superior
+    }
+
+
+def perfil_obtener_grupo_referencia(fila, df_evaluatec):
+    """
+    Usa como grupo de referencia la carrera EVALUATEC del estudiante.
+    Si no hay carrera EVALUATEC, usa todos los registros EVALUATEC.
+    """
+
+    carrera_eval = perfil_valor(
+        fila,
+        "Carrera_evaluatec",
+        ""
+    )
+
+    if carrera_eval != "":
+        grupo = df_evaluatec[
+            df_evaluatec["Carrera_normalizada"] == carrera_eval
+        ].copy()
+
+        if not grupo.empty:
+            return grupo
+
+    return df_evaluatec.copy()
+
+
+def perfil_crear_contexto_academico(fila, df_evaluatec, tabla_areas):
+    """
+    Calcula posición del estudiante contra sus compañeros.
+    No grafica el boxplot; solo usa su lógica para clasificar.
+    """
+
+    grupo = perfil_obtener_grupo_referencia(
+        fila,
+        df_evaluatec
+    )
+
+    promedio_eval = perfil_valor(
+        fila,
+        "eval_Promedio_global_individual",
+        np.nan
+    )
+
+    resultado_global = perfil_clasificar_por_cuartiles(
+        promedio_eval,
+        grupo["Promedio_global_individual"]
+    )
+
+    registros_dimensiones = []
+
+    for _, area in tabla_areas.iterrows():
+        codigo = area["Código"]
+        columna = f"Area_{codigo}"
+
+        if columna not in grupo.columns:
+            continue
+
+        resultado_dimension = perfil_clasificar_por_cuartiles(
+            area["Resultado"],
+            grupo[columna]
+        )
+
+        registros_dimensiones.append(
+            {
+                "Dimensión": area["Dimensión"],
+                "Resultado": area["Resultado"],
+                "Clasificación": resultado_dimension["Clasificación"],
+                "Nivel": resultado_dimension["Nivel"],
+                "Q1": resultado_dimension["Q1"],
+                "Q2": resultado_dimension["Q2"],
+                "Q3": resultado_dimension["Q3"]
+            }
+        )
+
+    tabla_contexto = pd.DataFrame(registros_dimensiones)
+
+    return resultado_global, tabla_contexto, grupo
+
+
+def perfil_color_clasificacion(clasificacion):
+    """Color visual para semáforo."""
+
+    if clasificacion == "Perfil en alto riesgo de no acreditar el semestre":
+        return "error"
+
+    if clasificacion in ["Riesgo preventivo", "Seguimiento académico"]:
+        return "warning"
+
+    if clasificacion in ["Desempeño esperado", "Fortaleza académica"]:
+        return "success"
+
+    if clasificacion == "Joven promesa":
+        return "success"
+
+    return "info"
+
+
+def perfil_mostrar_contexto_academico(resultado_global, tabla_contexto, grupo):
+    """Muestra el semáforo contextual del estudiante."""
+
+    st.markdown("## Posición académica respecto a sus compañeros")
+
+    st.caption(
+        "La clasificación se calcula internamente con lógica de boxplot y cuartiles. "
+        "No compara contra una calificación ideal, sino contra el desempeño de sus compañeros de referencia."
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric(
+        "Grupo de referencia",
+        f"{len(grupo):,} aspirantes"
+    )
+
+    col2.metric(
+        "Q1",
+        perfil_formato_porcentaje(resultado_global["Q1"])
+    )
+
+    col3.metric(
+        "Mediana",
+        perfil_formato_porcentaje(resultado_global["Q2"])
+    )
+
+    col4.metric(
+        "Q3",
+        perfil_formato_porcentaje(resultado_global["Q3"])
+    )
+
+    clasificacion = resultado_global["Clasificación"]
+
+    tipo = perfil_color_clasificacion(clasificacion)
+
+    mensaje = (
+        f"**Clasificación global:** {clasificacion}. "
+        f"Ubicación: {resultado_global['Nivel']}."
+    )
+
+    if tipo == "error":
+        st.error(mensaje)
+    elif tipo == "warning":
+        st.warning(mensaje)
+    elif tipo == "success":
+        st.success(mensaje)
+    else:
+        st.info(mensaje)
+
+    if not tabla_contexto.empty:
+        st.markdown("### Semáforo por dimensión")
+
+        tabla_vista = tabla_contexto[
+            [
+                "Dimensión",
+                "Resultado",
+                "Clasificación",
+                "Nivel"
+            ]
+        ].copy()
+
+        tabla_vista["Resultado"] = tabla_vista["Resultado"].apply(
+            lambda valor: f"{valor:.1f}%"
+        )
+
+        st.dataframe(
+            tabla_vista,
+            use_container_width=True,
+            hide_index=True
+        )
+
+
+def perfil_generar_acciones_acompanamiento(resultado_global, tabla_contexto):
+    """
+    Genera acciones de prevención y corrección según el lugar del estudiante
+    frente a sus compañeros.
+    """
+
+    clasificacion_global = resultado_global["Clasificación"]
+
+    acciones_prevencion = []
+    acciones_correccion = []
+
+    if tabla_contexto.empty:
+        return {
+            "Prevención": [
+                "Validar manualmente el expediente porque no se encontraron resultados suficientes para comparar."
+            ],
+            "Corrección": [
+                "Revisar captura de nombre, carrera y resultados EVALUATEC."
+            ]
+        }
+
+    dimensiones_riesgo = tabla_contexto[
+        tabla_contexto["Clasificación"].isin(
+            [
+                "Perfil en alto riesgo de no acreditar el semestre",
+                "Riesgo preventivo",
+                "Seguimiento académico"
+            ]
+        )
+    ].sort_values("Resultado")
+
+    dimensiones_fuertes = tabla_contexto[
+        tabla_contexto["Clasificación"].isin(
+            [
+                "Fortaleza académica",
+                "Joven promesa"
+            ]
+        )
+    ].sort_values("Resultado", ascending=False)
+
+    if clasificacion_global == "Perfil en alto riesgo de no acreditar el semestre":
+        acciones_prevencion.append(
+            "Canalizar a seguimiento académico temprano durante las primeras semanas del semestre."
+        )
+
+        acciones_correccion.append(
+            "Diseñar un plan de regularización con metas semanales y revisión de avances."
+        )
+
+    elif clasificacion_global in ["Riesgo preventivo", "Seguimiento académico"]:
+        acciones_prevencion.append(
+            "Mantener monitoreo preventivo para evitar rezago durante el arranque del semestre."
+        )
+
+        acciones_correccion.append(
+            "Asignar actividades de reforzamiento en las dimensiones con menor resultado."
+        )
+
+    elif clasificacion_global == "Joven promesa":
+        acciones_prevencion.append(
+            "Ofrecer actividades de mayor reto académico para mantener motivación y desarrollo."
+        )
+
+        acciones_correccion.append(
+            "No requiere corrección inmediata; se recomienda seguimiento de consolidación."
+        )
+
+    else:
+        acciones_prevencion.append(
+            "Mantener acompañamiento regular y observación del desempeño en las primeras evaluaciones."
+        )
+
+        acciones_correccion.append(
+            "Reforzar únicamente las dimensiones ubicadas por debajo de la mediana del grupo."
+        )
+
+    if not dimensiones_riesgo.empty:
+        principales = dimensiones_riesgo.head(2)
+
+        texto_dimensiones = ", ".join(
+            [
+                f"{fila['Dimensión']} ({fila['Resultado']:.1f}%)"
+                for _, fila in principales.iterrows()
+            ]
+        )
+
+        acciones_correccion.append(
+            f"Priorizar trabajo académico en: {texto_dimensiones}."
+        )
+
+    if not dimensiones_fuertes.empty:
+        principales_fuertes = dimensiones_fuertes.head(2)
+
+        texto_fuertes = ", ".join(
+            [
+                f"{fila['Dimensión']} ({fila['Resultado']:.1f}%)"
+                for _, fila in principales_fuertes.iterrows()
+            ]
+        )
+
+        acciones_prevencion.append(
+            f"Aprovechar como fortalezas de apoyo: {texto_fuertes}."
+        )
+
+    return {
+        "Prevención": acciones_prevencion,
+        "Corrección": acciones_correccion
+    }
+
+
+def perfil_mostrar_leyenda_acciones(acciones):
+    """Muestra leyenda de acciones preventivas y correctivas."""
+
+    st.markdown("## Leyenda de acompañamiento")
+
+    col_prevencion, col_correccion = st.columns(2)
+
+    with col_prevencion:
+        st.markdown("### Acciones de prevención")
+
+        for accion in acciones["Prevención"]:
+            st.info(accion)
+
+    with col_correccion:
+        st.markdown("### Acciones de corrección")
+
+        for accion in acciones["Corrección"]:
+            st.warning(accion)
+            
     if tabla_areas.empty:
         st.info("No hay resultados EVALUATEC para este aspirante.")
         return
@@ -3274,17 +3574,17 @@ def render_perfil_individual():
         st.write(f"**Carrera en EVALUATEC:** {carrera_eval}")
         st.write(f"**Escuela de procedencia:** {escuela}")
         st.write(f"**Estado de procedencia:** {estado}")
-
-    with col_validacion:
+with col_validacion:
+    if estatus_cruce != "Coincide en ambas bases":
         st.metric(
             "Estatus del cruce",
             estatus_cruce
         )
 
-        st.metric(
-            "Promedio bachillerato",
-            perfil_formato_porcentaje(promedio_bach)
-        )
+    st.metric(
+        "Promedio bachillerato",
+        perfil_formato_porcentaje(promedio_bach)
+    )
 
         st.metric(
             "Promedio EVALUATEC",
@@ -3333,24 +3633,26 @@ def render_perfil_individual():
                     f"{area['Dimensión']}: {area['Resultado']:.1f}%"
                 )
 
-    st.markdown("## Diagnóstico individual")
+resultado_global, tabla_contexto, grupo_referencia = perfil_crear_contexto_academico(
+    fila=fila,
+    df_evaluatec=df_evaluatec,
+    tabla_areas=tabla_areas
+)
 
-    diagnostico = perfil_generar_diagnostico(
-        fila,
-        tabla_areas
-    )
+perfil_mostrar_contexto_academico(
+    resultado_global=resultado_global,
+    tabla_contexto=tabla_contexto,
+    grupo=grupo_referencia
+)
 
-    st.info(diagnostico)
+acciones = perfil_generar_acciones_acompanamiento(
+    resultado_global=resultado_global,
+    tabla_contexto=tabla_contexto
+)
 
-    st.markdown("## Recomendaciones de nivelación")
-
-    recomendaciones = perfil_generar_recomendaciones(
-        fila,
-        tabla_areas
-    )
-
-    for recomendacion in recomendaciones:
-        st.write(f"- {recomendacion}")
+perfil_mostrar_leyenda_acciones(
+    acciones=acciones
+)
 
 # ============================================================
 # RENDER PRINCIPAL
