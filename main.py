@@ -4829,21 +4829,27 @@ def render_perfil_individual():
     )
 
     try:
-        df_chaside_raw_perfil = chaside_cargar_respuestas(
-            url_chaside_perfil
-        )
+    try:
+        if "df_chaside_global" in st.session_state:
+            df_chaside_perfil = st.session_state["df_chaside_global"].copy()
 
-        resultado_chaside_perfil = chaside_procesar_respuestas(
-            df_chaside_raw_perfil,
-            peso_intereses=0.8,
-            peso_aptitudes=0.2
-        )
-
-        if isinstance(resultado_chaside_perfil, tuple):
-            df_chaside_perfil = resultado_chaside_perfil[0]
         else:
-            df_chaside_perfil = resultado_chaside_perfil
+            df_chaside_raw_perfil = chaside_cargar_respuestas(
+                url_chaside_perfil
+            )
 
+            resultado_chaside_perfil = chaside_procesar_respuestas(
+                df_chaside_raw_perfil,
+                peso_intereses=0.8,
+                peso_aptitudes=0.2
+            )
+
+            if isinstance(resultado_chaside_perfil, tuple):
+                df_chaside_perfil = resultado_chaside_perfil[0]
+            else:
+                df_chaside_perfil = resultado_chaside_perfil
+
+            st.session_state["df_chaside_global"] = df_chaside_perfil.copy()
         nombre_actual_norm = perfil_normalizar_nombre(nombre)
         carrera_actual_norm = perfil_simplificar_carrera(carrera_historial)
 
@@ -5234,7 +5240,6 @@ def chaside_procesar_respuestas(
                 for i in CHASIDE_APTITUDES_ITEMS[area]
             ]
         ].sum(axis=1)
-
     for area in CHASIDE_AREAS:
         df[f"PUNTAJE_COMBINADO_{area}"] = (
             df[f"INTERES_{area}"] * peso_intereses
@@ -5247,6 +5252,9 @@ def chaside_procesar_respuestas(
             +
             df[f"APTITUD_{area}"]
         )
+
+    # Evita fragmentación del DataFrame y reduce riesgo de caída en Streamlit
+    df = df.copy()
 
     df["Area_Fuerte_Ponderada"] = df.apply(
         lambda fila: max(
@@ -5399,9 +5407,7 @@ def chaside_procesar_respuestas(
                 else:
                     df.loc[indice, "Nivel de intensidad"] = "Perfil en transición"
     return df
-# ============================================================
-# EJECUCIÓN DE LA APP
-# ============================================================
+
 # ============================================================
 # EJECUCIÓN DE LA APP
 # ============================================================
