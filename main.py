@@ -2531,8 +2531,6 @@ def perfil_encontrar_nombre_evaluatec(df):
     ]
 
     return util_encontrar_columna(df, posibles_columnas)
-
-
 def perfil_preparar_historial(contenido_archivo):
     """Procesa Historial y prepara nombre, carrera y datos generales."""
 
@@ -2576,7 +2574,6 @@ def perfil_preparar_historial(contenido_archivo):
         "Nombre_completo_visible"
     ].apply(perfil_normalizar_nombre)
 
-    # Eliminar filas que no son estudiantes, por ejemplo renglones de Aula
     df_historial = df_historial[
         df_historial["Nombre_match"].notna()
         &
@@ -2634,7 +2631,8 @@ def perfil_preparar_historial(contenido_archivo):
             "Escuela"
         ]
     )
-     if columna_escuela is not None:
+
+    if columna_escuela is not None:
 
         df_historial["Bachillerato_procedencia_original"] = df_historial[
             columna_escuela
@@ -2652,6 +2650,7 @@ def perfil_preparar_historial(contenido_archivo):
         df_historial["Bachillerato_procedencia_original"] = "Sin dato"
         df_historial["Bachillerato_procedencia"] = "Sin dato"
         df_historial["Estado_procedencia"] = "Sin dato"
+
     return df_historial, df_bitacora
 
 
@@ -3893,6 +3892,7 @@ def render_perfil_individual():
     )
 
     sexo = perfil_valor(fila, "hist_Sexo_normalizado")
+    
     escuela = perfil_valor(
     fila,
     "hist_Bachillerato_procedencia_original",
