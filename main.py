@@ -2962,21 +2962,198 @@ def chaside_render_reporte_ejecutivo_solo_link():
         key="download_chaside_procesado_solo_link"
     )
 
-def chaside_color_semaforo(semaforo):
-    if semaforo == "Verde":
-        return "#E8F5E9", "#2E7D32", "Perfil acorde"
+def chaside_render_reporte_ejecutivo_solo_link():
+    """Reporte ejecutivo CHASIDE sin archivo de aspirantes."""
 
-    if semaforo == "Amarillo":
-        return "#FFF8E1", "#F9A825", "Perfil por revisar"
+    st.markdown("## Reporte ejecutivo CHASIDE")
 
-    if semaforo == "Rojo":
-        return "#FFEBEE", "#C62828", "Perfil en riesgo"
+    url_chaside = st.text_input(
+        "Pega el enlace de respuestas de Google Forms / Google Sheets",
+        value="https://docs.google.com/spreadsheets/d/1YHMEb5hftOZfV-CMWoUsUgJh1xmsgTY3YYwAtq1dGQA/edit?resourcekey=&gid=1491376423#gid=1491376423",
+        key="chaside_url_google_solo_link"
+    )
 
-    if semaforo == "Respondió siempre igual":
-        return "#F3F4F6", "#6B7280", "Respuesta no confiable"
+    peso_intereses = st.slider(
+        "Peso de intereses",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.8,
+        step=0.1,
+        key="chaside_peso_intereses_solo_link"
+    )
 
-    return "#F3F4F6", "#6B7280", "Sin sugerencia clara"
+    peso_aptitudes = round(1 - peso_intereses, 2)
 
+    st.caption(
+        f"Pesos activos → Intereses: {peso_intereses:.1f} | "
+        f"Aptitudes: {peso_aptitudes:.1f}"
+    )
+
+    try:
+        with st.spinner("Cargando y procesando respuestas CHASIDE..."):
+            df_chaside_raw = chaside_cargar_respuestas(url_chaside)
+
+            resultado_chaside = chaside_procesar_respuestas(
+                df_chaside_raw,
+                peso_intereses=peso_intereses,
+                peso_aptitudes=peso_aptitudes
+            )
+
+            if isinstance(resultado_chaside, tuple):
+                df_chaside = resultado_chaside[0]
+            else:
+                df_chaside = resultado_chaside
+
+            if not isinstance(df_chaside, pd.DataFrame):
+                raise ValueError(
+                    "La función chaside_procesar_respuestas no regresó un DataFrame válido."
+                )
+
+    except Exception as error:
+        st.error(f"No fue posible procesar CHASIDE: {error}")
+        return
+
+    total_chaside = int(df_chaside.shape[0])
+
+    st.success(
+        f"CHASIDE procesado correctamente: {total_chaside} respuestas."
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Respuestas", total_chaside)
+
+    col2.metric(
+        "Perfil adecuado",
+        int((df_chaside["Semáforo vocacional"] == "Verde").sum())
+    )
+
+    col3.metric(
+        "Requiere revisión",
+        int((df_chaside["Semáforo vocacional"] != "Verde").sum())
+    )
+
+    st.markdown("## Reporte individual para docente")
+
+    df_selector = df_chaside.copy()
+
+    df_selector["Etiqueta"] = df_selector.apply(
+        lambda fila: (
+            f"{fila[CHASIDE_COLUMNA_NOMBRE]} · "
+            f"{fila[CHASIDE_COLUMNA_CARRERA]} · "
+            f"{fila['Semáforo vocacional']}"
+        ),
+        axis=1
+    )
+
+    opciones = sorted(
+        df_selector["Etiqueta"]
+        .dropna()
+        .astype(str)
+        .unique()
+    )
+
+    if not opciones:
+        st.warning("No hay estudiantes disponibles para mostrar.")
+        return
+
+    seleccion = st.selectbox(
+        "Selecciona estudiante",
+        options=opciones,
+        key="chaside_selector_estudiante_solo_link"
+    )
+
+    fila = df_selector[
+        df_selector["Etiqueta"] == seleccion
+    ].iloc[0]
+
+    fondo, borde, titulo = chaside_color_semaforo(
+        fila["Semáforo vocacional"]
+    )
+
+    recomendacion = chaside_recomendacion_ejecutiva_solo_link(fila)
+
+    st.markdown(
+        f"""
+        <div style="
+            background-color:{fondo};
+            border-left:10px solid {borde};
+            padding:20px 24px;
+            border-radius:16px;
+            color:#111111;
+            margin-bottom:16px;
+        ">
+            <h3 style="margin-top:0; color:#111111;">{titulo}</h3>
+            <p style="margin-bottom:0;">
+                <b>Diagnóstico:</b> {fila['Diagnóstico vocacional']}
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        st.markdown("### Identificación")
+        st.write(f"**Nombre:** {fila[CHASIDE_COLUMNA_NOMBRE]}")
+        st.write(f"**Carrera elegida:** {fila[CHASIDE_COLUMNA_CARRERA]}")
+
+        if CHASIDE_COLUMNA_EMAIL_1 in fila.index:
+            st.write(f"**Correo Google:** {fila[CHASIDE_COLUMNA_EMAIL_1]}")
+
+        if CHASIDE_COLUMNA_EMAIL_2 in fila.index:
+            st.write(f"**Correo escrito:** {fila[CHASIDE_COLUMNA_EMAIL_2]}")
+
+    with col_b:
+        st.markdown("### Perfil vocacional")
+        st.write(
+            f"**Área fuerte:** {fila['Area_Fuerte_Ponderada']} · "
+            f"{CHASIDE_AREAS_LONG.get(fila['Area_Fuerte_Ponderada'], '')}"
+        )
+        st.write(f"**Semáforo vocacional:** {fila['Semáforo vocacional']}")
+        st.write(f"**Nivel de intensidad:** {fila['Nivel de intensidad']}")
+        st.write(f"**Carrera mejor perfilada:** {fila['Carrera_Mejor_Perfilada']}")
+
+    st.markdown("### Recomendación docente")
+    st.info(recomendacion)
+
+    st.markdown("### Puntajes por área CHASIDE")
+
+    tabla_areas = []
+
+    for area in CHASIDE_AREAS:
+        tabla_areas.append(
+            {
+                "Área": area,
+                "Descripción": CHASIDE_AREAS_LONG[area],
+                "Intereses": fila[f"INTERES_{area}"],
+                "Aptitudes": fila[f"APTITUD_{area}"],
+                "Puntaje combinado": fila[f"PUNTAJE_COMBINADO_{area}"]
+            }
+        )
+
+    st.dataframe(
+        pd.DataFrame(tabla_areas).sort_values(
+            "Puntaje combinado",
+            ascending=False
+        ),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.download_button(
+        label="⬇️ Descargar respuestas CHASIDE procesadas",
+        data=dataframe_a_excel_bytes(
+            {
+                "CHASIDE procesado": df_chaside
+            }
+        ),
+        file_name="chaside_procesado.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="download_chaside_procesado_solo_link"
+    )
 
 def chaside_recomendacion_ejecutiva_solo_link(fila):
     semaforo = fila["Semáforo vocacional"]
