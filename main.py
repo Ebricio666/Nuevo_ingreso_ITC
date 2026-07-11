@@ -3548,10 +3548,6 @@ def perfil_generar_dictamen_tutoria(
         promedio_eval_grupo
     )
 
-    dimensiones = perfil_describir_dimensiones(
-        tabla_contexto
-    )
-
     nivel_alerta = perfil_clasificar_alerta_tutoria(
         promedio_bach=promedio_bach,
         promedio_eval=promedio_eval,
@@ -3572,6 +3568,84 @@ def perfil_generar_dictamen_tutoria(
         acciones["Corrección"]
     )
 
+    if tabla_contexto.empty:
+        texto_dimensiones = (
+            "No se cuenta con información suficiente para comparar "
+            "las dimensiones del EVALUATEC."
+        )
+
+        texto_fortalezas = (
+            "No se identificaron áreas fuertes por falta de información."
+        )
+
+        texto_oportunidad = (
+            "Validar manualmente los resultados del estudiante."
+        )
+
+    else:
+        tabla_ordenada = tabla_contexto.sort_values(
+            "Resultado",
+            ascending=True
+        )
+
+        areas_oportunidad = tabla_ordenada.head(2)
+
+        areas_fuertes = tabla_ordenada.tail(2).sort_values(
+            "Resultado",
+            ascending=False
+        )
+
+        texto_oportunidad = ", ".join(
+            [
+                f"{fila_area['Dimensión']} ({fila_area['Resultado']:.1f}%)"
+                for _, fila_area in areas_oportunidad.iterrows()
+            ]
+        )
+
+        texto_fortalezas = ", ".join(
+            [
+                f"{fila_area['Dimensión']} ({fila_area['Resultado']:.1f}%)"
+                for _, fila_area in areas_fuertes.iterrows()
+            ]
+        )
+
+        texto_dimensiones = (
+            f"Las áreas con mejor desempeño fueron <b>{texto_fortalezas}</b>. "
+            f"Las áreas de oportunidad principales fueron <b>{texto_oportunidad}</b>."
+        )
+
+    texto = f"""
+    <ol style="margin-top: 8px; padding-left: 24px;">
+        <li style="margin-bottom: 14px;">
+            <b>Nombre y procedencia:</b> {nombre} proviene de 
+            <b>{escuela}</b>, con procedencia registrada en 
+            <b>{estado}</b>. Su promedio de bachillerato es 
+            <b>{perfil_formato_porcentaje(promedio_bach)}</b>, el cual es 
+            {comparativo_bach} del grupo de referencia 
+            (<b>{perfil_formato_porcentaje(promedio_bach_grupo)}</b>).
+        </li>
+
+        <li style="margin-bottom: 14px;">
+            <b>Resultado global EVALUATEC:</b> obtuvo una calificación global de 
+            <b>{perfil_formato_porcentaje(promedio_eval)}</b>. Este resultado es 
+            {comparativo_eval} respecto al promedio de sus compañeros 
+            (<b>{perfil_formato_porcentaje(promedio_eval_grupo)}</b>).
+        </li>
+
+        <li style="margin-bottom: 14px;">
+            <b>Dimensiones EVALUATEC:</b> {texto_dimensiones}
+        </li>
+
+        <li style="margin-bottom: 14px;">
+            <b>Seguimiento y acompañamiento:</b> se recomienda implementar acciones 
+            en las áreas de oportunidad identificadas, especialmente en 
+            <b>{texto_oportunidad}</b>. Como acciones preventivas y correctivas se sugiere: 
+            {acciones_prevencion} {acciones_correccion}
+        </li>
+    </ol>
+    """
+
+    return nivel_alerta, texto
     # ------------------------------------------------------------
     # Lectura de dimensiones
     # ------------------------------------------------------------
@@ -4062,7 +4136,6 @@ def render_perfil_individual():
         """,
         unsafe_allow_html=True
     )
-
     if not tabla_contexto.empty:
         st.markdown("### Detalle por dimensión")
 
