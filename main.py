@@ -5079,7 +5079,6 @@ def render_perfil_individual():
         )
 
     try:
-    try:
         pdf_dictamen = perfil_generar_pdf_dictamen(
             nombre=nombre,
             carrera=carrera_historial,
@@ -5105,19 +5104,21 @@ def render_perfil_individual():
         st.warning(
             "Para activar la descarga en PDF, agrega reportlab al archivo requirements.txt."
         )
-        # ============================================================
+
 # ============================================================
 # FUNCIONES BASE CHASIDE
 # ============================================================
-
+    
     except ModuleNotFoundError:
         st.warning(
             "Para activar la descarga en PDF, agrega `reportlab` al archivo requirements.txt."
         ) 
+# ============================================================
 # FUNCIONES BASE CHASIDE
 # ============================================================
 
 def chaside_transformar_url_google_sheets(url):
+    
     """
     Convierte una URL editable de Google Sheets a una URL CSV descargable.
     Usa por defecto el gid de la pestaña de respuestas CHASIDE.
