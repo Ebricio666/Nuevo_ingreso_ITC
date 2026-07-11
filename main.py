@@ -377,11 +377,11 @@ def cargar_datos_globales():
             with st.spinner("Cargando respuestas CHASIDE desde Google Forms..."):
                 df_chaside_raw = chaside_cargar_respuestas(url_chaside)
 
-             resultado_chaside = chaside_procesar_respuestas(
-                df_chaside_raw,
-                peso_intereses=peso_intereses,
-                peso_aptitudes=peso_aptitudes
-            )
+                resultado_chaside = chaside_procesar_respuestas(
+                    df_chaside_raw,
+                    peso_intereses=peso_intereses,
+                    peso_aptitudes=peso_aptitudes
+                )
 
             if isinstance(resultado_chaside, tuple):
                 df_chaside = resultado_chaside[0]
@@ -393,30 +393,27 @@ def cargar_datos_globales():
                     "La función chaside_procesar_respuestas no regresó un DataFrame válido."
                 )
 
-    total_chaside = int(df_chaside.shape[0])
-
-    st.success(
-        f"CHASIDE procesado correctamente: {total_chaside} respuestas."
-    )
             st.session_state["df_chaside_raw_global"] = df_chaside_raw
             st.session_state["df_chaside_global"] = df_chaside
 
+            total_chaside = int(df_chaside.shape[0])
+
             st.success(
-                f"CHASIDE cargado correctamente: {len(df_chaside):,} respuestas."
+                f"CHASIDE cargado correctamente: {total_chaside} respuestas."
             )
 
         except Exception as error:
             st.error(f"No fue posible cargar/procesar CHASIDE: {error}")
 
     elif "df_chaside_global" in st.session_state:
+        total_chaside = int(st.session_state["df_chaside_global"].shape[0])
+
         st.success(
-            f"CHASIDE ya cargado: {len(st.session_state['df_chaside_global']):,} respuestas."
+            f"CHASIDE ya cargado: {total_chaside} respuestas."
         )
+
     else:
         st.info("Aún no se han procesado las respuestas CHASIDE.")
-
-    st.markdown("---")
-
     # ------------------------------------------------------------
     # Estado general
     # ------------------------------------------------------------
@@ -2777,7 +2774,6 @@ def render_modulo_chaside_con_carga():
 
     chaside_render_reporte_ejecutivo_solo_link()
 
-def chaside_render_reporte_ejecutivo_solo_link():
     """Reporte ejecutivo CHASIDE sin archivo de aspirantes."""
 
     st.markdown("## Reporte ejecutivo CHASIDE")
@@ -2962,7 +2958,24 @@ def chaside_render_reporte_ejecutivo_solo_link():
         key="download_chaside_procesado_solo_link"
     )
 
-def chaside_render_reporte_ejecutivo_solo_link():
+def chaside_color_semaforo(semaforo):
+    """Define color visual del diagnóstico CHASIDE."""
+
+    if semaforo == "Verde":
+        return "#E8F5E9", "#2E7D32", "Perfil acorde"
+
+    if semaforo == "Amarillo":
+        return "#FFF8E1", "#F9A825", "Perfil por revisar"
+
+    if semaforo == "Rojo":
+        return "#FFEBEE", "#C62828", "Perfil en riesgo"
+
+    if semaforo == "Respondió siempre igual":
+        return "#F3F4F6", "#6B7280", "Respuesta no confiable"
+
+    return "#F3F4F6", "#6B7280", "Sin sugerencia clara"
+    
+    def chaside_render_reporte_ejecutivo_solo_link():
     """Reporte ejecutivo CHASIDE sin archivo de aspirantes."""
 
     st.markdown("## Reporte ejecutivo CHASIDE")
@@ -2988,31 +3001,28 @@ def chaside_render_reporte_ejecutivo_solo_link():
         f"Pesos activos → Intereses: {peso_intereses:.1f} | "
         f"Aptitudes: {peso_aptitudes:.1f}"
     )
-
     try:
         with st.spinner("Cargando y procesando respuestas CHASIDE..."):
             df_chaside_raw = chaside_cargar_respuestas(url_chaside)
-
             resultado_chaside = chaside_procesar_respuestas(
                 df_chaside_raw,
                 peso_intereses=peso_intereses,
                 peso_aptitudes=peso_aptitudes
             )
 
-            if isinstance(resultado_chaside, tuple):
-                df_chaside = resultado_chaside[0]
-            else:
-                df_chaside = resultado_chaside
+        if isinstance(resultado_chaside, tuple):
+            df_chaside = resultado_chaside[0]
+        else:
+            df_chaside = resultado_chaside
 
-            if not isinstance(df_chaside, pd.DataFrame):
-                raise ValueError(
-                    "La función chaside_procesar_respuestas no regresó un DataFrame válido."
-                )
+        if not isinstance(df_chaside, pd.DataFrame):
+            raise ValueError(
+                "La función chaside_procesar_respuestas no regresó un DataFrame válido."
+            )
 
     except Exception as error:
         st.error(f"No fue posible procesar CHASIDE: {error}")
         return
-
     total_chaside = int(df_chaside.shape[0])
 
     st.success(
@@ -5411,15 +5421,7 @@ def chaside_procesar_respuestas(
                     df.loc[indice, "Nivel de intensidad"] = "Joven promesa"
                 else:
                     df.loc[indice, "Nivel de intensidad"] = "Perfil en transición"
-def render_modulo_chaside_con_carga():
-    """Muestra CHASIDE únicamente desde el enlace de respuestas."""
-
-    st.title("🧭 Diagnóstico vocacional CHASIDE")
-    st.caption(
-        "Este módulo se alimenta directamente del enlace de respuestas de Google Forms / Google Sheets."
-    )
-
-    chaside_render_reporte_ejecutivo_solo_link()
+    return df
 # ============================================================
 # EJECUCIÓN DE LA APP
 # ============================================================
