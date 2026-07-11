@@ -5078,29 +5078,33 @@ def render_perfil_individual():
             unsafe_allow_html=True
         )
 
-    pdf_dictamen = perfil_generar_pdf_dictamen(
-        nombre=nombre,
-        carrera=carrera_historial,
-        configuracion=configuracion,
-        dictamen_tutoria=dictamen_tutoria
-    )
+    try:
+        pdf_dictamen = perfil_generar_pdf_dictamen(
+            nombre=nombre,
+            carrera=carrera_historial,
+            configuracion=configuracion,
+            dictamen_tutoria=dictamen_tutoria
+        )
 
-    nombre_archivo_pdf = (
-        "dictamen_tutorial_"
-        + perfil_normalizar_nombre(nombre).lower().replace(" ", "_")
-        + ".pdf"
-    )
+        nombre_archivo_pdf = (
+            "dictamen_tutorial_"
+            + perfil_normalizar_nombre(nombre).lower().replace(" ", "_")
+            + ".pdf"
+        )
 
-    st.download_button(
-        label="⬇️ Descargar dictamen tutorial en PDF",
-        data=pdf_dictamen,
-        file_name=nombre_archivo_pdf,
-        mime="application/pdf",
-        use_container_width=True
-    )
+        st.download_button(
+            label="⬇️ Descargar dictamen tutorial en PDF",
+            data=pdf_dictamen,
+            file_name=nombre_archivo_pdf,
+            mime="application/pdf",
+            use_container_width=True
+        )
 
-# ============================================================
-# ============================================================
+    except ModuleNotFoundError:
+        st.warning(
+            "Para activar la descarga en PDF, agrega `reportlab` al archivo requirements.txt."
+        ) 
+============================================================
 # FUNCIONES BASE CHASIDE
 # ============================================================
 
