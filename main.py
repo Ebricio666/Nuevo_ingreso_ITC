@@ -4635,66 +4635,87 @@ def render_perfil_individual():
 
     estado = perfil_valor(fila, "hist_Estado_procedencia")
     matricula = perfil_valor(fila, "hist_ID_aspirante")
-        # ------------------------------------------------------------
-    # Validación CHASIDE dentro del perfil individual
+    # ------------------------------------------------------------
+    # Resultados CHASIDE dentro del perfil individual
     # ------------------------------------------------------------
 
     st.markdown("## Diagnóstico vocacional CHASIDE")
 
     url_chaside_perfil = st.text_input(
         "Enlace de respuestas CHASIDE",
-        value="https://docs.google.com/spreadsheets/u/2/d/1YHMEb5hftOZfV-CMWoUsUgJh1xmsgTY3YYwAtq1dGQA/edit?resourcekey&gid=1491376423#gid=1491376423",
+        value=st.session_state.get(
+            "url_chaside_global",
+            "https://docs.google.com/spreadsheets/d/1YHMEb5hftOZfV-CMWoUsUgJh1xmsgTY3YYwAtq1dGQA/edit?resourcekey=&gid=1491376423#gid=1491376423"
+        ),
         key="perfil_url_chaside"
     )
 
     try:
-        df_chaside_raw_perfil = chaside_cargar_respuestas(
-            url_chaside_perfil
-        )
+        with st.spinner("Buscando resultados CHASIDE del aspirante..."):
 
-        df_chaside_perfil = chaside_procesar_respuestas(
-            df_chaside_raw_perfil,
-            peso_intereses=0.8,
-            peso_aptitudes=0.2
-        )
-
-        df_cruce_chaside_perfil = chaside_cruzar_con_aspirantes(
-            df_aspirantes=df_historial,
-            df_chaside=df_chaside_perfil
-        )
-
-        nombre_actual_norm = chaside_normalizar_nombre(nombre)
-        carrera_actual_norm = chaside_simplificar_carrera(carrera_historial)
-
-        df_match_chaside = df_cruce_chaside_perfil.copy()
-
-        df_match_chaside["Nombre_match_actual"] = df_match_chaside[
-            "Nombre aspirantes"
-        ].apply(chaside_normalizar_nombre)
-
-        df_match_chaside["Carrera_match_actual"] = df_match_chaside[
-            "Carrera aspirantes"
-        ].apply(chaside_simplificar_carrera)
-
-        df_match_chaside = df_match_chaside[
-            (
-                df_match_chaside["Nombre_match_actual"] == nombre_actual_norm
+            df_chaside_raw_perfil = chaside_cargar_respuestas(
+                url_chaside_perfil
             )
-            |
-            (
-                (
-                    df_match_chaside["Carrera_match_actual"] == carrera_actual_norm
-                )
-                &
-                (
-                    df_match_chaside["Nombre CHASIDE"]
-                    .apply(lambda valor: chaside_score_nombre(valor, nombre))
-                    >= 0.72
-                )
-            )
-        ].copy()
 
-        if df_match_chaside.empty:
+            resultado_chaside_perfil = chaside_procesar_respuestas(
+                df_chaside_raw_perfil,
+                peso_intereses=0.8,
+                peso_aptitudes=0.2
+            )
+
+            if isinstance(resultado_chaside_perfil, tuple):
+                df_chaside_perfil = resultado_chaside_perfil[0]
+            else:
+                df_chaside_perfil = resultado_chaside_perfil
+
+            if not isinstance(df_chaside_perfil, pd.DataFrame):
+                raise ValueError(
+                    "CHASIDE no regresó una tabla válida."
+                )
+
+            nombre_actual_norm = perfil_normalizar_nombre(nombre)
+            carrera_actual_norm = perfil_simplificar_carrera(carrera_historial)
+
+            df_chaside_match = df_chaside_perfil.copy()
+
+            df_chaside_match["Nombre_match"] = df_chaside_match[
+                CHASIDE_COLUMNA_NOMBRE
+            ].apply(perfil_normalizar_nombre)
+
+            df_chaside_match["Carrera_match"] = df_chaside_match[
+                CHASIDE_COLUMNA_CARRERA
+            ].apply(perfil_simplificar_carrera)
+
+            df_chaside_match["Score_nombre"] = df_chaside_match[
+                "Nombre_match"
+            ].apply(
+                lambda valor: SequenceMatcher(
+                    None,
+                    valor,
+                    nombre_actual_norm
+                ).ratio()
+            )
+
+            df_chaside_match["Coincide_carrera"] = (
+                df_chaside_match["Carrera_match"] == carrera_actual_norm
+            )
+
+            df_chaside_match = df_chaside_match.sort_values(
+                ["Coincide_carrera", "Score_nombre"],
+                ascending=[False, False]
+            )
+
+            if df_chaside_match.empty:
+                fila_chaside = None
+            else:
+                mejor_match = df_chaside_match.iloc[0]
+
+                if mejor_match["Score_nombre"] >= 0.72:
+                    fila_chaside = mejor_match
+                else:
+                    fila_chaside = None
+
+        if fila_chaside is None:
             st.warning(
                 "No se encontró registro CHASIDE para este aspirante. "
                 "Solicita al estudiante realizar la escala en el siguiente enlace: "
@@ -4702,14 +4723,44 @@ def render_perfil_individual():
             )
 
         else:
-            fila_chaside = df_match_chaside.iloc[0]
-
             fondo_chaside, borde_chaside, titulo_chaside = chaside_color_semaforo(
                 fila_chaside["Semáforo vocacional"]
             )
 
-            recomendacion_chaside = chaside_recomendacion_ejecutiva(
+            recomendacion_chaside = chaside_recomendacion_ejecutiva_solo_link(
                 fila_chaside
+            )
+
+            area_fuerte = fila_chaside["Area_Fuerte_Ponderada"]
+            area_fuerte_desc = CHASIDE_AREAS_LONG.get(area_fuerte, "")
+
+            tabla_areas_chaside = []
+
+            for area in CHASIDE_AREAS:
+                tabla_areas_chaside.append(
+                    {
+                        "Área": area,
+                        "Descripción": CHASIDE_AREAS_LONG[area],
+                        "Intereses": fila_chaside[f"INTERES_{area}"],
+                        "Aptitudes": fila_chaside[f"APTITUD_{area}"],
+                        "Puntaje combinado": fila_chaside[f"PUNTAJE_COMBINADO_{area}"]
+                    }
+                )
+
+            df_areas_chaside = pd.DataFrame(
+                tabla_areas_chaside
+            ).sort_values(
+                "Puntaje combinado",
+                ascending=False
+            )
+
+            areas_mas_fuertes = df_areas_chaside.head(3).copy()
+
+            texto_areas_fuertes = ", ".join(
+                [
+                    f"{fila_area['Área']} · {fila_area['Descripción']}"
+                    for _, fila_area in areas_mas_fuertes.iterrows()
+                ]
             )
 
             st.markdown(
@@ -4734,21 +4785,61 @@ def render_perfil_individual():
             col_chaside_1, col_chaside_2 = st.columns(2)
 
             with col_chaside_1:
-                st.write(f"**Carrera en aspirantes:** {fila_chaside['Carrera aspirantes']}")
-                st.write(f"**Carrera en CHASIDE:** {fila_chaside['Carrera CHASIDE']}")
-                st.write(f"**Estatus del cruce:** {fila_chaside['Estatus cruce']}")
-                st.write(f"**Método de cruce:** {fila_chaside['Método cruce']}")
+                st.markdown("### Resultado CHASIDE")
+
+                st.write(
+                    f"**Carrera respondida en CHASIDE:** "
+                    f"{fila_chaside[CHASIDE_COLUMNA_CARRERA]}"
+                )
+
+                st.write(
+                    f"**Área más fuerte:** "
+                    f"{area_fuerte} · {area_fuerte_desc}"
+                )
+
+                st.write(
+                    f"**Áreas más fuertes:** {texto_areas_fuertes}"
+                )
+
+                st.write(
+                    f"**Semáforo vocacional:** "
+                    f"{fila_chaside['Semáforo vocacional']}"
+                )
 
             with col_chaside_2:
+                st.markdown("### Interpretación docente")
+
                 st.write(
-                    f"**Área fuerte:** {fila_chaside['Área fuerte CHASIDE']} · "
-                    f"{fila_chaside['Área fuerte descrita']}"
+                    f"**Nivel de intensidad:** "
+                    f"{fila_chaside['Nivel de intensidad']}"
                 )
-                st.write(f"**Semáforo vocacional:** {fila_chaside['Semáforo vocacional']}")
-                st.write(f"**Nivel de intensidad:** {fila_chaside['Nivel de intensidad']}")
-                st.write(f"**Carrera mejor perfilada:** {fila_chaside['Carrera mejor perfilada']}")
+
+                st.write(
+                    f"**Carrera mejor perfilada:** "
+                    f"{fila_chaside['Carrera_Mejor_Perfilada']}"
+                )
+
+                st.write(
+                    f"**Coincidencia CHASIDE:** "
+                    f"{fila_chaside['Coincidencia_CHASIDE']}"
+                )
+
+                st.write(
+                    f"**Similitud de nombre:** "
+                    f"{fila_chaside['Score_nombre']:.2f}"
+                )
+
+            st.markdown("### Recomendación docente CHASIDE")
 
             st.info(recomendacion_chaside)
+
+            st.markdown("### Puntajes CHASIDE por área")
+
+            st.dataframe(
+                df_areas_chaside,
+                use_container_width=True,
+                hide_index=True
+            )
 
     except Exception as error:
         st.warning(
@@ -4756,8 +4847,6 @@ def render_perfil_individual():
             "Solicita al estudiante realizar la escala en el siguiente enlace: "
             "https://forms.gle/7WM7sJXhiGAgh2BH6"
         )
-    col_info, col_validacion = st.columns([2, 1])
-
     with col_info:
         st.markdown(f"### {nombre}")
         st.write(f"**Matrícula/ID:** {matricula}")
