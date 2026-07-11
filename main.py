@@ -3353,25 +3353,25 @@ def perfil_configuracion_alerta_tutoria(nivel_alerta):
             "titulo": "Alumno regular",
             "color_fondo": "#E8F5E9",
             "color_borde": "#2E7D32",
-            "color_texto": "#1B5E20"
+            "color_texto": "#111111"
         },
         "observacion": {
             "titulo": "Alumno en observación",
             "color_fondo": "#FFFDE7",
             "color_borde": "#FBC02D",
-            "color_texto": "#795548"
+            "color_texto": "#111111"
         },
         "irregular": {
             "titulo": "Alumno irregular",
             "color_fondo": "#FFF3E0",
             "color_borde": "#F57C00",
-            "color_texto": "#E65100"
+            "color_texto": "#111111"
         },
         "red_flag": {
             "titulo": "Red flag académico",
             "color_fondo": "#FFEBEE",
             "color_borde": "#C62828",
-            "color_texto": "#B71C1C"
+            "color_texto": "#111111"
         }
     }
 
@@ -3408,7 +3408,33 @@ def perfil_promedio_grupo_historial(fila, df_historial):
     ].mean()
 
 
-def perfil_texto_comparativo(valor_estudiante, valor_grupo):
+def perfil_texto_comparativo_coloreado(valor_estudiante, valor_grupo):
+    """
+    Redacta comparación contra pares con color:
+    rojo si está por debajo, verde si está por arriba.
+    """
+
+    if pd.isna(valor_estudiante) or pd.isna(valor_grupo):
+        return "sin información suficiente para realizar una comparación con sus pares"
+
+    diferencia = valor_estudiante - valor_grupo
+
+    if diferencia > 0:
+        return (
+            f"<b style='color:#2E7D32;'>superior en {abs(diferencia):.1f} "
+            f"puntos porcentuales respecto a sus pares</b>"
+        )
+
+    if diferencia < 0:
+        return (
+            f"<b style='color:#C62828;'>inferior en {abs(diferencia):.1f} "
+            f"puntos porcentuales respecto a sus pares</b>"
+        )
+
+    return (
+        "<b style='color:#333333;'>similar al promedio de sus pares</b>"
+    )
+    
     """
     Redacta comparación simple entre estudiante y grupo.
     """
