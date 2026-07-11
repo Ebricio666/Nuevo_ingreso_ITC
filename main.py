@@ -4468,6 +4468,77 @@ def perfil_clasificar_area_boxplot(resultado, columna_grupo, grupo_referencia):
         return "Joven promesa", "#2E7D32"
 
     return "Estudiante regular", "#111111"
+def perfil_normalizar_correo(valor):
+    """Normaliza correos para cruces entre bases."""
+
+    if pd.isna(valor):
+        return ""
+
+    texto = str(valor).strip().lower()
+
+    if texto in ["", "nan", "none", "sin dato"]:
+        return ""
+
+    return texto
+
+
+def perfil_extraer_correos_fila(fila):
+    """
+    Extrae posibles correos desde Historial y EVALUATEC.
+    Busca columnas que contengan correo/email/mail.
+    """
+
+    correos = []
+
+    for columna in fila.index:
+        columna_limpia = util_limpiar_texto(columna)
+
+        if (
+            "correo" in columna_limpia
+            or "email" in columna_limpia
+            or "mail" in columna_limpia
+        ):
+            correo = perfil_normalizar_correo(fila[columna])
+
+            if correo != "":
+                correos.append(correo)
+
+    return list(set(correos))
+
+
+def perfil_score_nombre_tokens(nombre_a, nombre_b):
+    """
+    Calcula similitud flexible por nombre.
+    Funciona mejor cuando falta un apellido o cambia el orden.
+    """
+
+    nombre_a = perfil_normalizar_nombre(nombre_a)
+    nombre_b = perfil_normalizar_nombre(nombre_b)
+
+    if nombre_a == "" or nombre_b == "":
+        return 0
+
+    tokens_a = set(nombre_a.split())
+    tokens_b = set(nombre_b.split())
+
+    tokens_a = {token for token in tokens_a if len(token) >= 3}
+    tokens_b = {token for token in tokens_b if len(token) >= 3}
+
+    if not tokens_a or not tokens_b:
+        return 0
+
+    interseccion = len(tokens_a.intersection(tokens_b))
+    union = len(tokens_a.union(tokens_b))
+
+    score_tokens = interseccion / union
+
+    score_texto = SequenceMatcher(
+        None,
+        " ".join(sorted(tokens_a)),
+        " ".join(sorted(tokens_b))
+    ).ratio()
+
+    return max(score_tokens, score_texto)
     
 def render_perfil_individual():
     st.title("👤 Perfil individual del aspirante")
@@ -4676,6 +4747,8 @@ def render_perfil_individual():
             nombre_actual_norm = perfil_normalizar_nombre(nombre)
             carrera_actual_norm = perfil_simplificar_carrera(carrera_historial)
 
+            correos_aspirante = perfil_extraer_correos_fila(fila)
+
             df_chaside_match = df_chaside_perfil.copy()
 
             df_chaside_match["Nombre_match"] = df_chaside_match[
@@ -4686,35 +4759,74 @@ def render_perfil_individual():
                 CHASIDE_COLUMNA_CARRERA
             ].apply(perfil_simplificar_carrera)
 
-            df_chaside_match["Score_nombre"] = df_chaside_match[
-                "Nombre_match"
-            ].apply(
-                lambda valor: SequenceMatcher(
-                    None,
-                    valor,
-                    nombre_actual_norm
-                ).ratio()
+            df_chaside_match["Correo_CHASIDE_1"] = ""
+
+            if CHASIDE_COLUMNA_EMAIL_1 in df_chaside_match.columns:
+                df_chaside_match["Correo_CHASIDE_1"] = df_chaside_match[
+                    CHASIDE_COLUMNA_EMAIL_1
+                ].apply(perfil_normalizar_correo)
+
+            df_chaside_match["Correo_CHASIDE_2"] = ""
+
+            if CHASIDE_COLUMNA_EMAIL_2 in df_chaside_match.columns:
+                df_chaside_match["Correo_CHASIDE_2"] = df_chaside_match[
+                    CHASIDE_COLUMNA_EMAIL_2
+                ].apply(perfil_normalizar_correo)
+
+            df_chaside_match["Coincide_correo"] = df_chaside_match.apply(
+                lambda fila_ch: (
+                    fila_ch["Correo_CHASIDE_1"] in correos_aspirante
+                    or fila_ch["Correo_CHASIDE_2"] in correos_aspirante
+                ),
+                axis=1
             )
 
             df_chaside_match["Coincide_carrera"] = (
                 df_chaside_match["Carrera_match"] == carrera_actual_norm
             )
 
+            df_chaside_match["Score_nombre"] = df_chaside_match[
+                CHASIDE_COLUMNA_NOMBRE
+            ].apply(
+                lambda valor: perfil_score_nombre_tokens(
+                    valor,
+                    nombre
+                )
+            )
+
             df_chaside_match = df_chaside_match.sort_values(
-                ["Coincide_carrera", "Score_nombre"],
-                ascending=[False, False]
+                [
+                    "Coincide_correo",
+                    "Coincide_carrera",
+                    "Score_nombre"
+                ],
+                ascending=[
+                    False,
+                    False,
+                    False
+                ]
             )
 
             if df_chaside_match.empty:
                 fila_chaside = None
+
             else:
                 mejor_match = df_chaside_match.iloc[0]
 
-                if mejor_match["Score_nombre"] >= 0.72:
+                if mejor_match["Coincide_correo"]:
                     fila_chaside = mejor_match
+
+                elif (
+                    mejor_match["Coincide_carrera"]
+                    and mejor_match["Score_nombre"] >= 0.45
+                ):
+                    fila_chaside = mejor_match
+
+                elif mejor_match["Score_nombre"] >= 0.70:
+                    fila_chaside = mejor_match
+
                 else:
                     fila_chaside = None
-
         if fila_chaside is None:
             st.warning(
                 "No se encontró registro CHASIDE para este aspirante. "
@@ -4828,7 +4940,22 @@ def render_perfil_individual():
                     f"**Similitud de nombre:** "
                     f"{fila_chaside['Score_nombre']:.2f}"
                 )
+            metodo_match = "Sin coincidencia"
 
+            if fila_chaside["Coincide_correo"]:
+                metodo_match = "Correo electrónico"
+
+            elif fila_chaside["Coincide_carrera"] and fila_chaside["Score_nombre"] >= 0.45:
+                metodo_match = "Carrera + similitud de nombre"
+
+            elif fila_chaside["Score_nombre"] >= 0.70:
+                metodo_match = "Similitud de nombre"
+
+            st.caption(
+                f"Coincidencia CHASIDE encontrada por: {metodo_match} "
+                f"| Score nombre: {fila_chaside['Score_nombre']:.2f}"
+            )
+            
             st.markdown("### Recomendación docente CHASIDE")
 
             st.info(recomendacion_chaside)
