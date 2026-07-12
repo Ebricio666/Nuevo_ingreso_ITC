@@ -6058,7 +6058,6 @@ def render_categorizacion_estudiantado():
         use_container_width=True,
         hide_index=True
     )
-
     columnas_excel = [
         "Carrera",
         "Posición tutorial",
@@ -6069,6 +6068,7 @@ def render_categorizacion_estudiantado():
         "CHASIDE",
         "Carrera sugerida CHASIDE"
     ]
+
     resumen_excel = resumen[
         [
             "Posición tutorial",
