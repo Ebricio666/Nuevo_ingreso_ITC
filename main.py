@@ -3075,15 +3075,6 @@ def chaside_render_reporte_ejecutivo_solo_link():
             }
         )
 
-    st.dataframe(
-        pd.DataFrame(tabla_areas).sort_values(
-            "Puntaje combinado",
-            ascending=False
-        ),
-        use_container_width=True,
-        hide_index=True
-    )
-
     st.download_button(
         label="⬇️ Descargar respuestas CHASIDE procesadas",
         data=dataframe_a_excel_bytes(
@@ -3096,13 +3087,7 @@ def chaside_render_reporte_ejecutivo_solo_link():
         use_container_width=True,
         key="download_chaside_procesado_solo_link"
     )
-        file_name="chaside_procesado.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-        key="download_chaside_procesado_solo_link"
-    )
-
-
+    
 def render_modulo_chaside_con_carga():
     """Muestra CHASIDE únicamente desde el enlace de respuestas."""
 
