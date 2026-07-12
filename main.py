@@ -1333,7 +1333,6 @@ def eval_mostrar_barras_distribucion_dimension(
         "en cada dimensión."
     )
 
-
 def render_evaluatec():
     st.title("📘 Resultados EVALUATEC 2026")
     st.caption("Perfil académico por carrera.")
@@ -1401,48 +1400,15 @@ def render_evaluatec():
 
         st.session_state["datos_eval_global"] = datos_por_bloque
 
-
-    if len(archivos_subidos) != 3:
-        st.warning(
-            f"Actualmente cargaste {len(archivos_subidos)} archivo(s). "
-            "Deben cargarse exactamente 3."
-        )
-        st.stop()
-
-    datos_por_bloque = {}
-    errores = []
-
-    for archivo in archivos_subidos:
-        try:
-            df_archivo, areas_detectadas = eval_procesar_archivo(
-                archivo
-            )
-
-            bloque = df_archivo["Bloque"].iloc[0]
-
-            datos_por_bloque[bloque] = {
-                "df": df_archivo,
-                "areas": areas_detectadas,
-                "archivo": archivo.name
-            }
-
-        except Exception as error:
-            errores.append(
-                f"{archivo.name}: {error}"
-            )
-
-    if errores:
-        for error in errores:
-            st.error(error)
-
-    if not datos_por_bloque:
-        st.stop()
-
     bloques_disponibles = [
         codigo
         for codigo in EVAL_BLOQUES
         if codigo in datos_por_bloque
     ]
+
+    if not bloques_disponibles:
+        st.error("No hay bloques EVALUATEC disponibles para mostrar.")
+        st.stop()
 
     bloque_seleccionado = st.radio(
         "Selecciona el archivo o bloque académico",
@@ -2656,18 +2622,6 @@ def render_historial():
                 "Carga un archivo Excel en este módulo o primero usa el módulo "
                 "📂 Carga de archivos."
             )
-            st.stop()
-
-        contenido_archivo = archivo_subido.getvalue()
-
-        with st.spinner("Leyendo e integrando hojas del archivo..."):
-            df_general, df_bitacora = hist_procesar_archivo_excel(
-                contenido_archivo
-            )
-
-        if df_general.empty:
-            st.error("No se pudieron identificar registros de aspirantes.")
-            st.dataframe(df_bitacora, use_container_width=True)
             st.stop()
 
         st.session_state["df_historial_global"] = df_general.copy()
@@ -5190,18 +5144,12 @@ def render_perfil_individual():
                 "<b>Diagnóstico vocacional CHASIDE</b> y procesa las respuestas."
             )
 
-    except Exception as error:
+     except Exception as error:
         dictamen_chaside = (
             "No fue posible integrar automáticamente el resultado CHASIDE. "
             "Se recomienda revisar manualmente la coincidencia por nombre, correo o carrera."
         )
-    
-    except Exception as error:
-        dictamen_chaside = (
-            "No fue posible integrar automáticamente el resultado CHASIDE. "
-            "Se recomienda revisar manualmente la coincidencia por nombre, correo o carrera."
-        )
-    
+         
     tabla_areas = perfil_obtener_areas_individuales(fila)
 
     resultado_global, tabla_contexto, grupo_referencia = perfil_crear_contexto_academico(
