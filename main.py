@@ -5419,7 +5419,261 @@ def chaside_procesar_respuestas(
                     df.loc[indice, "Nivel de intensidad"] = "Perfil en transición"
 
     return df.copy()
+# ============================================================
+# PARCHE CHASIDE OPTIMIZADO - EVITA SEGMENTATION FAULT
+# ============================================================
 
+def chaside_procesar_respuestas(
+    df_raw,
+    peso_intereses=0.8,
+    peso_aptitudes=0.2
+):
+    """Procesa respuestas CHASIDE sin fragmentar el DataFrame."""
+
+    df = df_raw.copy()
+    df.columns = df.columns.str.strip()
+
+    faltantes = [
+        columna
+        for columna in [
+            CHASIDE_COLUMNA_NOMBRE,
+            CHASIDE_COLUMNA_CARRERA
+        ]
+        if columna not in df.columns
+    ]
+
+    if faltantes:
+        raise ValueError(
+            f"Faltan columnas requeridas en CHASIDE: {faltantes}. "
+            f"Columnas detectadas: {list(df.columns)}"
+        )
+
+    columnas_items = df.columns[6:104]
+
+    if len(columnas_items) != 98:
+        raise ValueError(
+            f"Se esperaban 98 reactivos CHASIDE, "
+            f"pero se detectaron {len(columnas_items)}."
+        )
+
+    df_items = (
+        df[columnas_items]
+        .astype(str)
+        .apply(lambda col: col.str.strip().str.lower())
+        .replace({
+            "sí": 1,
+            "si": 1,
+            "s": 1,
+            "1": 1,
+            "true": 1,
+            "verdadero": 1,
+            "x": 1,
+            "no": 0,
+            "n": 0,
+            "0": 0,
+            "false": 0,
+            "falso": 0,
+            "": 0,
+            "nan": 0
+        })
+        .apply(pd.to_numeric, errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
+
+    df_base = df.drop(
+        columns=columnas_items,
+        errors="ignore"
+    ).copy()
+
+    nuevas = pd.DataFrame(index=df_base.index)
+
+    nuevas["Desv_Intrapersona"] = df_items.std(axis=1)
+
+    umbral = nuevas["Desv_Intrapersona"].quantile(0.10)
+
+    nuevas["Respondio_Siempre_Igual"] = (
+        nuevas["Desv_Intrapersona"] <= umbral
+    )
+
+    for area in CHASIDE_AREAS:
+        columnas_interes = [
+            chaside_col_item(columnas_items, i)
+            for i in CHASIDE_INTERESES_ITEMS[area]
+        ]
+
+        columnas_aptitud = [
+            chaside_col_item(columnas_items, i)
+            for i in CHASIDE_APTITUDES_ITEMS[area]
+        ]
+
+        interes = df_items[columnas_interes].sum(axis=1)
+        aptitud = df_items[columnas_aptitud].sum(axis=1)
+
+        nuevas[f"INTERES_{area}"] = interes
+        nuevas[f"APTITUD_{area}"] = aptitud
+        nuevas[f"PUNTAJE_COMBINADO_{area}"] = (
+            interes * peso_intereses
+            +
+            aptitud * peso_aptitudes
+        )
+        nuevas[f"TOTAL_{area}"] = interes + aptitud
+
+    columnas_score = [
+        f"PUNTAJE_COMBINADO_{area}"
+        for area in CHASIDE_AREAS
+    ]
+
+    nuevas["Area_Fuerte_Ponderada"] = (
+        nuevas[columnas_score]
+        .idxmax(axis=1)
+        .str.replace("PUNTAJE_COMBINADO_", "", regex=False)
+    )
+
+    nuevas["Score_CHASIDE"] = nuevas[columnas_score].max(axis=1)
+
+    df = pd.concat(
+        [
+            df_base,
+            nuevas
+        ],
+        axis=1
+    ).copy()
+
+    def evaluar_coincidencia(area_chaside, carrera):
+        carrera = str(carrera).strip()
+        perfil = CHASIDE_PERFILES_CARRERA.get(carrera)
+
+        if not perfil:
+            return "Sin perfil definido"
+
+        if area_chaside in perfil:
+            return "Coherente"
+
+        return "No coincidente"
+
+    df["Coincidencia_CHASIDE"] = df.apply(
+        lambda fila: evaluar_coincidencia(
+            fila["Area_Fuerte_Ponderada"],
+            fila[CHASIDE_COLUMNA_CARRERA]
+        ),
+        axis=1
+    )
+
+    def carrera_mejor_perfilada(fila):
+        if fila["Respondio_Siempre_Igual"]:
+            return "Información no confiable"
+
+        area = fila["Area_Fuerte_Ponderada"]
+        carrera_actual = str(fila[CHASIDE_COLUMNA_CARRERA]).strip()
+
+        sugeridas = [
+            carrera
+            for carrera, letras in CHASIDE_PERFILES_CARRERA.items()
+            if area in letras
+        ]
+
+        if carrera_actual in sugeridas:
+            return carrera_actual
+
+        if sugeridas:
+            return ", ".join(sugeridas)
+
+        return "Sin sugerencia clara"
+
+    df["Carrera_Mejor_Perfilada"] = df.apply(
+        carrera_mejor_perfilada,
+        axis=1
+    )
+
+    def diagnostico(fila):
+        carrera_actual = str(fila[CHASIDE_COLUMNA_CARRERA]).strip()
+        mejor = str(fila["Carrera_Mejor_Perfilada"]).strip()
+
+        if fila["Respondio_Siempre_Igual"]:
+            return "Información no confiable"
+
+        if mejor == carrera_actual:
+            return "Perfil adecuado"
+
+        if mejor == "Sin sugerencia clara":
+            return "Sin sugerencia clara"
+
+        return f"Sugerencia: {mejor}"
+
+    df["Diagnóstico vocacional"] = df.apply(
+        diagnostico,
+        axis=1
+    )
+
+    def semaforo(fila):
+        if fila["Respondio_Siempre_Igual"]:
+            return "Respondió siempre igual"
+
+        if fila["Diagnóstico vocacional"] == "Sin sugerencia clara":
+            return "Sin sugerencia"
+
+        if (
+            fila["Diagnóstico vocacional"] == "Perfil adecuado"
+            and fila["Coincidencia_CHASIDE"] == "Coherente"
+        ):
+            return "Verde"
+
+        if fila["Diagnóstico vocacional"] == "Perfil adecuado":
+            return "Amarillo"
+
+        if str(fila["Diagnóstico vocacional"]).startswith("Sugerencia:"):
+            return "Amarillo"
+
+        return "Rojo"
+
+    df["Semáforo vocacional"] = df.apply(
+        semaforo,
+        axis=1
+    )
+
+    df["Nivel de intensidad"] = "Sin nivel definido"
+
+    for carrera, grupo in df.groupby(CHASIDE_COLUMNA_CARRERA):
+
+        indices_amarillos = grupo[
+            grupo["Semáforo vocacional"] == "Amarillo"
+        ].sort_values(
+            "Score_CHASIDE",
+            ascending=True
+        ).index.tolist()
+
+        indices_verdes = grupo[
+            grupo["Semáforo vocacional"] == "Verde"
+        ].sort_values(
+            "Score_CHASIDE",
+            ascending=True
+        ).index.tolist()
+
+        if len(indices_amarillos) > 0:
+            total_amarillos = len(indices_amarillos)
+
+            for posicion, indice in enumerate(indices_amarillos, start=1):
+                rank_pct = posicion / total_amarillos
+
+                if rank_pct <= 0.25:
+                    df.loc[indice, "Nivel de intensidad"] = "Sin perfil"
+                else:
+                    df.loc[indice, "Nivel de intensidad"] = "Perfil en riesgo"
+
+        if len(indices_verdes) > 0:
+            total_verdes = len(indices_verdes)
+
+            for posicion, indice in enumerate(indices_verdes, start=1):
+                rank_pct = posicion / total_verdes
+
+                if rank_pct > 0.75:
+                    df.loc[indice, "Nivel de intensidad"] = "Joven promesa"
+                else:
+                    df.loc[indice, "Nivel de intensidad"] = "Perfil en transición"
+
+    return df.copy()
+    
 # ============================================================
 # EJECUCIÓN DE LA APP
 # ============================================================
