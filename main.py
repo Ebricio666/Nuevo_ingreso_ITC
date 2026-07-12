@@ -2628,19 +2628,59 @@ def render_historial():
         st.session_state["df_bitacora_historial"] = df_bitacora.copy()
 
     
-    contenido_archivo = archivo_subido.getvalue()
+def render_historial():
+    st.title("🎓 Historial de Aspirantes")
+    st.caption(
+        "Análisis general y análisis por carrera de aspirantes de nuevo ingreso."
+    )
 
-    with st.spinner("Leyendo e integrando hojas del archivo..."):
-        df_general, df_bitacora = hist_procesar_archivo_excel(
-            contenido_archivo
+    if "df_historial_global" in st.session_state:
+        df_general = st.session_state["df_historial_global"].copy()
+        df_bitacora = st.session_state.get(
+            "df_bitacora_historial",
+            pd.DataFrame()
         )
 
-    if df_general.empty:
-        st.error("No se pudieron identificar registros de aspirantes.")
-        st.dataframe(df_bitacora, use_container_width=True)
-        st.stop()
+        st.success(
+            "Historial cargado desde el módulo global de carga de archivos."
+        )
+
+    else:
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Carga Historial")
+
+        archivo_subido = st.sidebar.file_uploader(
+            "Carga el archivo Excel de aspirantes",
+            type=["xlsx", "xls"],
+            key="hist_archivo"
+        )
+
+        if archivo_subido is None:
+            st.info(
+                "Carga un archivo Excel en este módulo o primero usa el módulo "
+                "📂 Carga de archivos."
+            )
+            st.stop()
+
+        contenido_archivo = archivo_subido.getvalue()
+
+        with st.spinner("Leyendo e integrando hojas del archivo..."):
+            df_general, df_bitacora = hist_procesar_archivo_excel(
+                contenido_archivo
+            )
+
+        if df_general.empty:
+            st.error("No se pudieron identificar registros de aspirantes.")
+            st.dataframe(df_bitacora, use_container_width=True)
+            st.stop()
+
+        st.session_state["df_historial_global"] = df_general.copy()
+        st.session_state["df_bitacora_historial"] = df_bitacora.copy()
 
     columna_sexo = util_encontrar_columna(
+        df_general,
+        ["Género", "Genero", "Sexo"]
+    )
         df_general,
         ["Género", "Genero", "Sexo"]
     )
