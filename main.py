@@ -95,10 +95,11 @@ modulo_activo = st.sidebar.radio(
         "📘 EVALUATEC 2026",
         "🎓 Historial de Aspirantes",
         "🧭 Diagnóstico vocacional CHASIDE",
-        "👤 Perfil individual"
+        "👤 Perfil individual",
+        "📌 Categorización del estudiantado"
     ]
-)    
-# ============================================================
+)
+
 # UTILIDADES GENERALES COMPARTIDAS
 # ============================================================
 
@@ -5400,7 +5401,570 @@ def render_perfil_individual():
         st.warning(
             f"No fue posible generar el PDF por ahora: {error}"
         )
+# ============================================================
+# MÓDULO 4: CATEGORIZACIÓN DEL ESTUDIANTADO
+# ============================================================
 
+def cat_clasificar_posicion_tutorial(valor, serie_referencia):
+    """
+    Clasifica al estudiante usando lógica de boxplot por carrera.
+    No genera gráfica, solo categoría tutorial.
+    """
+
+    serie = pd.Series(serie_referencia).dropna()
+
+    if pd.isna(valor) or serie.empty or len(serie) < 5:
+        return {
+            "Posición tutorial": "Sin información suficiente",
+            "Detalle técnico boxplot": "Sin referencia suficiente",
+            "Q1": np.nan,
+            "Mediana": np.nan,
+            "Q3": np.nan,
+            "Límite inferior": np.nan,
+            "Límite superior": np.nan
+        }
+
+    q1 = serie.quantile(0.25)
+    mediana = serie.quantile(0.50)
+    q3 = serie.quantile(0.75)
+    iqr = q3 - q1
+
+    limite_inferior = q1 - 1.5 * iqr
+    limite_superior = q3 + 1.5 * iqr
+
+    if valor < limite_inferior:
+        posicion = "Alto riesgo de no acreditación"
+        detalle = "Atípico inferior"
+
+    elif limite_inferior <= valor < q1:
+        posicion = "Alto riesgo de no acreditación"
+        detalle = "Bigote inferior"
+
+    elif q1 <= valor < mediana:
+        posicion = "Bajo desempeño"
+        detalle = "Cuartil 1"
+
+    elif mediana <= valor < q3:
+        posicion = "Joven con serias dificultades para acreditar"
+        detalle = "Cuartil 2"
+
+    elif q3 <= valor <= limite_superior:
+        posicion = "Joven con algunas dificultades para acreditar"
+        detalle = "Cuartil 3"
+
+    else:
+        posicion = "Joven talento"
+        detalle = "Atípico superior"
+
+    return {
+        "Posición tutorial": posicion,
+        "Detalle técnico boxplot": detalle,
+        "Q1": q1,
+        "Mediana": mediana,
+        "Q3": q3,
+        "Límite inferior": limite_inferior,
+        "Límite superior": limite_superior
+    }
+
+
+def cat_preparar_evaluatec_desde_session(datos_eval_global):
+    """
+    Integra los bloques EVALUATEC cargados en session_state
+    y prepara nombres/carreras para cruce.
+    """
+
+    bases_eval = []
+
+    for bloque, info_bloque in datos_eval_global.items():
+        df_temp = info_bloque["df"].copy()
+
+        columna_nombre = perfil_encontrar_nombre_evaluatec(df_temp)
+
+        if columna_nombre is None:
+            continue
+
+        df_temp["Nombre_completo_visible"] = df_temp[
+            columna_nombre
+        ].apply(perfil_nombre_visible)
+
+        df_temp["Nombre_match"] = df_temp[
+            columna_nombre
+        ].apply(perfil_normalizar_nombre)
+
+        df_temp["Carrera_match"] = df_temp[
+            "Carrera_normalizada"
+        ].apply(perfil_simplificar_carrera)
+
+        df_temp["Areas_detectadas_lista"] = ",".join(
+            info_bloque["areas"].keys()
+        )
+
+        bases_eval.append(df_temp)
+
+    if not bases_eval:
+        return pd.DataFrame()
+
+    return pd.concat(
+        bases_eval,
+        ignore_index=True,
+        sort=False
+    )
+
+
+def cat_obtener_chaside_para_estudiante(fila, df_chaside):
+    """
+    Cruza un estudiante contra CHASIDE por correo, carrera y nombre.
+    Regresa texto corto para la tabla visible y campos detallados para Excel.
+    """
+
+    resultado_base = {
+        "CHASIDE": "Sin respuesta CHASIDE",
+        "Carrera elegida CHASIDE": "Sin dato",
+        "Carrera sugerida CHASIDE": "Sin dato",
+        "Área fuerte CHASIDE": "Sin dato",
+        "Semáforo CHASIDE": "Sin dato",
+        "Nivel CHASIDE": "Sin dato"
+    }
+
+    if df_chaside is None or df_chaside.empty:
+        return resultado_base
+
+    try:
+        nombre = perfil_valor(fila, "Nombre_visible")
+        carrera_historial = perfil_valor(fila, "Carrera_historial")
+
+        carrera_actual_norm = perfil_simplificar_carrera(carrera_historial)
+        correos_aspirante = perfil_extraer_correos_fila(fila)
+
+        df_match = df_chaside.copy()
+
+        df_match["Nombre_match"] = df_match[
+            CHASIDE_COLUMNA_NOMBRE
+        ].apply(perfil_normalizar_nombre)
+
+        df_match["Carrera_match"] = df_match[
+            CHASIDE_COLUMNA_CARRERA
+        ].apply(perfil_simplificar_carrera)
+
+        df_match["Correo_CHASIDE_1"] = ""
+
+        if CHASIDE_COLUMNA_EMAIL_1 in df_match.columns:
+            df_match["Correo_CHASIDE_1"] = df_match[
+                CHASIDE_COLUMNA_EMAIL_1
+            ].apply(perfil_normalizar_correo)
+
+        df_match["Correo_CHASIDE_2"] = ""
+
+        if CHASIDE_COLUMNA_EMAIL_2 in df_match.columns:
+            df_match["Correo_CHASIDE_2"] = df_match[
+                CHASIDE_COLUMNA_EMAIL_2
+            ].apply(perfil_normalizar_correo)
+
+        df_match["Coincide_correo"] = df_match.apply(
+            lambda fila_ch: (
+                fila_ch["Correo_CHASIDE_1"] in correos_aspirante
+                or fila_ch["Correo_CHASIDE_2"] in correos_aspirante
+            ),
+            axis=1
+        )
+
+        df_match["Coincide_carrera"] = (
+            df_match["Carrera_match"] == carrera_actual_norm
+        )
+
+        df_match["Score_nombre"] = df_match[
+            CHASIDE_COLUMNA_NOMBRE
+        ].apply(
+            lambda valor: perfil_score_nombre_tokens(
+                valor,
+                nombre
+            )
+        )
+
+        df_match = df_match.sort_values(
+            [
+                "Coincide_correo",
+                "Coincide_carrera",
+                "Score_nombre"
+            ],
+            ascending=[
+                False,
+                False,
+                False
+            ]
+        )
+
+        if df_match.empty:
+            return resultado_base
+
+        mejor = df_match.iloc[0]
+
+        match_valido = (
+            mejor["Coincide_correo"]
+            or (
+                mejor["Coincide_carrera"]
+                and mejor["Score_nombre"] >= 0.45
+            )
+            or mejor["Score_nombre"] >= 0.70
+        )
+
+        if not match_valido:
+            return resultado_base
+
+        diagnostico = str(mejor["Diagnóstico vocacional"])
+        semaforo = str(mejor["Semáforo vocacional"])
+        carrera_elegida = str(mejor[CHASIDE_COLUMNA_CARRERA])
+        carrera_sugerida = str(mejor["Carrera_Mejor_Perfilada"])
+        area_fuerte = str(mejor["Area_Fuerte_Ponderada"])
+        nivel = str(mejor["Nivel de intensidad"])
+
+        if semaforo == "Respondió siempre igual":
+            texto_chaside = "Respuesta no confiable"
+
+        elif diagnostico == "Perfil adecuado":
+            texto_chaside = "Perfil acorde a su elección"
+
+        elif diagnostico.startswith("Sugerencia:"):
+            texto_chaside = f"No acorde · Canalizar a {carrera_sugerida}"
+
+        elif carrera_sugerida == "Sin sugerencia clara":
+            texto_chaside = "Sin perfil definido para la carrera"
+
+        else:
+            texto_chaside = f"No acorde · Canalizar a {carrera_sugerida}"
+
+        return {
+            "CHASIDE": texto_chaside,
+            "Carrera elegida CHASIDE": carrera_elegida,
+            "Carrera sugerida CHASIDE": carrera_sugerida,
+            "Área fuerte CHASIDE": area_fuerte,
+            "Semáforo CHASIDE": semaforo,
+            "Nivel CHASIDE": nivel
+        }
+
+    except Exception:
+        return resultado_base
+
+
+def cat_generar_tabla_categorizacion(df_cruzado, df_chaside=None):
+    """
+    Genera tabla completa de categorización por carrera.
+    """
+
+    registros = []
+
+    for _, fila in df_cruzado.iterrows():
+        nombre = perfil_valor(fila, "Nombre_visible")
+        carrera = perfil_valor(fila, "Carrera_referencia")
+        matricula = perfil_valor(fila, "hist_ID_aspirante")
+
+        promedio_bach = perfil_valor(
+            fila,
+            "hist_Promedio_normalizado_100",
+            np.nan
+        )
+
+        escuela = perfil_valor(
+            fila,
+            "hist_Bachillerato_procedencia_original",
+            perfil_valor(fila, "hist_Bachillerato_procedencia")
+        )
+
+        resultado_eval = perfil_valor(
+            fila,
+            "eval_Promedio_global_individual",
+            np.nan
+        )
+
+        if carrera == "Sin dato" or pd.isna(resultado_eval):
+            clasificacion = {
+                "Posición tutorial": "Sin información suficiente",
+                "Detalle técnico boxplot": "Sin resultado EVALUATEC",
+                "Q1": np.nan,
+                "Mediana": np.nan,
+                "Q3": np.nan,
+                "Límite inferior": np.nan,
+                "Límite superior": np.nan
+            }
+
+        else:
+            grupo_carrera = df_cruzado[
+                df_cruzado["Carrera_referencia"] == carrera
+            ]
+
+            serie_referencia = grupo_carrera[
+                "eval_Promedio_global_individual"
+            ]
+
+            clasificacion = cat_clasificar_posicion_tutorial(
+                resultado_eval,
+                serie_referencia
+            )
+
+        resultado_chaside = cat_obtener_chaside_para_estudiante(
+            fila,
+            df_chaside
+        )
+
+        estudiante_visible = (
+            f"{nombre} · Promedio: {perfil_formato_porcentaje(promedio_bach)} "
+            f"· Escuela: {escuela}"
+        )
+
+        registros.append(
+            {
+                "Carrera": carrera,
+                "Posición tutorial": clasificacion["Posición tutorial"],
+                "Estudiante": estudiante_visible,
+                "CHASIDE": resultado_chaside["CHASIDE"],
+                "Nombre": nombre,
+                "Matrícula/ID": matricula,
+                "Promedio bachillerato": promedio_bach,
+                "Escuela de procedencia": escuela,
+                "Resultado EVALUATEC": resultado_eval,
+                "Detalle técnico boxplot": clasificacion["Detalle técnico boxplot"],
+                "Carrera elegida CHASIDE": resultado_chaside["Carrera elegida CHASIDE"],
+                "Carrera sugerida CHASIDE": resultado_chaside["Carrera sugerida CHASIDE"],
+                "Área fuerte CHASIDE": resultado_chaside["Área fuerte CHASIDE"],
+                "Semáforo CHASIDE": resultado_chaside["Semáforo CHASIDE"],
+                "Nivel CHASIDE": resultado_chaside["Nivel CHASIDE"],
+                "Q1": clasificacion["Q1"],
+                "Mediana": clasificacion["Mediana"],
+                "Q3": clasificacion["Q3"],
+                "Límite inferior": clasificacion["Límite inferior"],
+                "Límite superior": clasificacion["Límite superior"]
+            }
+        )
+
+    tabla = pd.DataFrame(registros)
+
+    if tabla.empty:
+        return tabla
+
+    orden_posicion = {
+        "Joven talento": 1,
+        "Joven con algunas dificultades para acreditar": 2,
+        "Joven con serias dificultades para acreditar": 3,
+        "Bajo desempeño": 4,
+        "Alto riesgo de no acreditación": 5,
+        "Sin información suficiente": 6
+    }
+
+    tabla["Orden posición"] = tabla["Posición tutorial"].map(
+        orden_posicion
+    ).fillna(99)
+
+    tabla = tabla.sort_values(
+        [
+            "Carrera",
+            "Orden posición",
+            "Resultado EVALUATEC"
+        ],
+        ascending=[
+            True,
+            True,
+            False
+        ]
+    )
+
+    return tabla
+
+
+def render_categorizacion_estudiantado():
+    st.title("📌 Categorización del estudiantado")
+    st.caption(
+        "Clasificación tutorial por carrera con base en EVALUATEC, promedio de bachillerato y CHASIDE."
+    )
+
+    requeridos = [
+        "datos_eval_global",
+        "df_historial_global"
+    ]
+
+    faltantes = [
+        clave
+        for clave in requeridos
+        if clave not in st.session_state
+    ]
+
+    if faltantes:
+        st.warning(
+            "Primero carga Historial y EVALUATEC en el módulo 📂 Carga de archivos."
+        )
+        st.stop()
+
+    datos_eval_global = st.session_state["datos_eval_global"]
+
+    df_historial = perfil_preparar_historial_desde_dataframe(
+        st.session_state["df_historial_global"]
+    )
+
+    if df_historial.empty:
+        st.error(
+            "El Historial está cargado, pero no se pudo preparar para categorización."
+        )
+        st.stop()
+
+    df_evaluatec = cat_preparar_evaluatec_desde_session(
+        datos_eval_global
+    )
+
+    if df_evaluatec.empty:
+        st.error(
+            "EVALUATEC está cargado, pero no se pudo preparar para categorización."
+        )
+        st.stop()
+
+    df_cruzado = perfil_crear_base_cruzada(
+        df_historial=df_historial,
+        df_evaluatec=df_evaluatec
+    )
+
+    df_chaside = st.session_state.get(
+        "df_chaside_global",
+        pd.DataFrame()
+    )
+
+    tabla = cat_generar_tabla_categorizacion(
+        df_cruzado=df_cruzado,
+        df_chaside=df_chaside
+    )
+
+    if tabla.empty:
+        st.warning("No se pudo generar la tabla de categorización.")
+        st.stop()
+
+    carreras_disponibles = sorted(
+        tabla["Carrera"]
+        .dropna()
+        .astype(str)
+        .unique()
+    )
+
+    carrera_seleccionada = st.selectbox(
+        "Selecciona carrera",
+        options=carreras_disponibles,
+        key="cat_selector_carrera"
+    )
+
+    tabla_carrera = tabla[
+        tabla["Carrera"].astype(str) == str(carrera_seleccionada)
+    ].copy()
+
+    st.markdown(f"## {carrera_seleccionada}")
+
+    resumen = (
+        tabla_carrera
+        .groupby("Posición tutorial")
+        .size()
+        .reset_index(name="Estudiantes")
+    )
+
+    orden_posicion = {
+        "Joven talento": 1,
+        "Joven con algunas dificultades para acreditar": 2,
+        "Joven con serias dificultades para acreditar": 3,
+        "Bajo desempeño": 4,
+        "Alto riesgo de no acreditación": 5,
+        "Sin información suficiente": 6
+    }
+
+    resumen["Orden"] = resumen["Posición tutorial"].map(
+        orden_posicion
+    ).fillna(99)
+
+    resumen = resumen.sort_values("Orden")
+
+    st.markdown("### Resumen por posición tutorial")
+
+    columnas_metricas = st.columns(
+        min(5, max(1, len(resumen)))
+    )
+
+    for columna, (_, fila_resumen) in zip(
+        columnas_metricas,
+        resumen.iterrows()
+    ):
+        columna.metric(
+            fila_resumen["Posición tutorial"],
+            int(fila_resumen["Estudiantes"])
+        )
+
+    st.markdown("### Listado tutorial")
+
+    columnas_visibles = [
+        "Posición tutorial",
+        "Estudiante",
+        "CHASIDE"
+    ]
+
+    tabla_visible = tabla_carrera[
+        columnas_visibles
+    ].copy()
+
+    st.dataframe(
+        tabla_visible,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    columnas_excel = [
+        "Carrera",
+        "Posición tutorial",
+        "Nombre",
+        "Matrícula/ID",
+        "Promedio bachillerato",
+        "Escuela de procedencia",
+        "Resultado EVALUATEC",
+        "Detalle técnico boxplot",
+        "CHASIDE",
+        "Carrera elegida CHASIDE",
+        "Carrera sugerida CHASIDE",
+        "Área fuerte CHASIDE",
+        "Semáforo CHASIDE",
+        "Nivel CHASIDE",
+        "Q1",
+        "Mediana",
+        "Q3",
+        "Límite inferior",
+        "Límite superior"
+    ]
+
+    resumen_excel = resumen[
+        [
+            "Posición tutorial",
+            "Estudiantes"
+        ]
+    ].copy()
+
+    archivo_excel = dataframe_a_excel_bytes(
+        {
+            "Listado tutorial": tabla_carrera[columnas_excel],
+            "Resumen por posición": resumen_excel
+        }
+    )
+
+    nombre_archivo = (
+        "categorizacion_estudiantado_"
+        + perfil_simplificar_carrera(carrera_seleccionada).replace(" ", "_")
+        + ".xlsx"
+    )
+
+    st.download_button(
+        label="⬇️ Descargar listado de la carrera en Excel",
+        data=archivo_excel,
+        file_name=nombre_archivo,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+
+    st.markdown("---")
+
+    st.caption(
+        "La posición tutorial se calcula internamente con lógica de boxplot por carrera. "
+        "No se muestran gráficas; solo categorías accionables para seguimiento."
+    )
+        
 # ============================================================
 # FUNCIONES BASE CHASIDE
 # ============================================================
@@ -5746,3 +6310,6 @@ elif modulo_activo == "🧭 Diagnóstico vocacional CHASIDE":
 
 elif modulo_activo == "👤 Perfil individual":
     render_perfil_individual()
+    
+elif modulo_activo == "📌 Categorización del estudiantado":
+    render_categorizacion_estudiantado()
