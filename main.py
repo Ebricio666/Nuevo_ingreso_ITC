@@ -2863,7 +2863,6 @@ def chaside_render_reporte_ejecutivo_solo_link():
         f"Pesos activos → Intereses: {peso_intereses:.1f} | "
         f"Aptitudes: {peso_aptitudes:.1f}"
     )
-
     try:
         with st.spinner("Cargando y procesando respuestas CHASIDE..."):
             df_chaside_raw = chaside_cargar_respuestas(url_chaside)
@@ -2884,10 +2883,11 @@ def chaside_render_reporte_ejecutivo_solo_link():
                 "La función chaside_procesar_respuestas no regresó un DataFrame válido."
             )
 
+        st.session_state["df_chaside_global"] = df_chaside.copy()
+
     except Exception as error:
         st.error(f"No fue posible procesar CHASIDE: {error}")
         return
-
     total_chaside = int(df_chaside.shape[0])
 
     st.success(
