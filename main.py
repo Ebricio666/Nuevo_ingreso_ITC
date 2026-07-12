@@ -394,9 +394,8 @@ def cargar_datos_globales():
                 )
 
             st.session_state["df_chaside_raw_global"] = df_chaside_raw
-            st.session_state["df_chaside_global"] = df_chaside
-            
-    st.session_state["df_chaside_global"] = df_chaside.copy()
+            st.session_state["df_chaside_global"] = df_chaside.copy()
+
             total_chaside = int(df_chaside.shape[0])
 
             st.success(
@@ -4922,11 +4921,11 @@ def render_perfil_individual():
             "Se recomienda revisar manualmente la coincidencia por nombre, correo o carrera."
         )
     
-    dictamen_chaside = (
-        "El resultado CHASIDE se integrará posteriormente. "
-        "Por ahora, el dictamen tutorial se genera con Historial de Aspirantes "
-        "y EVALUATEC."
-    )
+    except Exception as error:
+        dictamen_chaside = (
+            "No fue posible integrar automáticamente el resultado CHASIDE. "
+            "Se recomienda revisar manualmente la coincidencia por nombre, correo o carrera."
+        )
     
     tabla_areas = perfil_obtener_areas_individuales(fila)
 
