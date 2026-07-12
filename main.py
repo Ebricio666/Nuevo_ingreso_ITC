@@ -5485,9 +5485,12 @@ def cat_preparar_evaluatec_desde_session(datos_eval_global):
             "Carrera_normalizada"
         ].apply(perfil_simplificar_carrera)
 
-        df_temp["Areas_detectadas_lista"] = ",".join(
-            info_bloque["areas"].keys()
-        )
+        areas = info_bloque.get("areas", {})
+
+        if isinstance(areas, dict):
+            df_temp["Areas_detectadas_lista"] = ",".join(areas.keys())
+        else:
+            df_temp["Areas_detectadas_lista"] = ",".join([str(x) for x in areas])
 
         bases_eval.append(df_temp)
 
@@ -5504,16 +5507,11 @@ def cat_preparar_evaluatec_desde_session(datos_eval_global):
 def cat_obtener_chaside_para_estudiante(fila, df_chaside):
     """
     Cruza un estudiante contra CHASIDE por correo, carrera y nombre.
-    Regresa texto corto para la tabla visible y campos detallados para Excel.
+    Solo regresa la carrera vocacional sugerida.
     """
 
     resultado_base = {
-        "CHASIDE": "Sin respuesta CHASIDE",
-        "Carrera elegida CHASIDE": "Sin dato",
-        "Carrera sugerida CHASIDE": "Sin dato",
-        "Área fuerte CHASIDE": "Sin dato",
-        "Semáforo CHASIDE": "Sin dato",
-        "Nivel CHASIDE": "Sin dato"
+        "Carrera vocacional sugerida CHASIDE": "Sin respuesta CHASIDE"
     }
 
     if df_chaside is None or df_chaside.empty:
@@ -5601,35 +5599,27 @@ def cat_obtener_chaside_para_estudiante(fila, df_chaside):
         if not match_valido:
             return resultado_base
 
-        diagnostico = str(mejor["Diagnóstico vocacional"])
         semaforo = str(mejor["Semáforo vocacional"])
         carrera_elegida = str(mejor[CHASIDE_COLUMNA_CARRERA])
         carrera_sugerida = str(mejor["Carrera_Mejor_Perfilada"])
-        area_fuerte = str(mejor["Area_Fuerte_Ponderada"])
-        nivel = str(mejor["Nivel de intensidad"])
 
         if semaforo == "Respondió siempre igual":
-            texto_chaside = "Respuesta no confiable"
+            carrera_final = "Requiere realizar o repetir la escala CHASIDE"
 
-        elif diagnostico == "Perfil adecuado":
-            texto_chaside = "Perfil acorde a su elección"
-
-        elif diagnostico.startswith("Sugerencia:"):
-            texto_chaside = f"No acorde · Canalizar a {carrera_sugerida}"
-
-        elif carrera_sugerida == "Sin sugerencia clara":
-            texto_chaside = "Sin perfil definido para la carrera"
+        elif carrera_sugerida in [
+            "Sin sugerencia clara",
+            "Información no confiable",
+            "nan",
+            "None",
+            ""
+        ]:
+            carrera_final = "Sin sugerencia clara"
 
         else:
-            texto_chaside = f"No acorde · Canalizar a {carrera_sugerida}"
+            carrera_final = carrera_sugerida
 
         return {
-            "CHASIDE": texto_chaside,
-            "Carrera elegida CHASIDE": carrera_elegida,
-            "Carrera sugerida CHASIDE": carrera_sugerida,
-            "Área fuerte CHASIDE": area_fuerte,
-            "Semáforo CHASIDE": semaforo,
-            "Nivel CHASIDE": nivel
+            "Carrera vocacional sugerida CHASIDE": carrera_final
         }
 
     except Exception:
@@ -5646,7 +5636,6 @@ def cat_generar_tabla_categorizacion(df_cruzado, df_chaside=None):
     for _, fila in df_cruzado.iterrows():
         nombre = perfil_valor(fila, "Nombre_visible")
         carrera = perfil_valor(fila, "Carrera_referencia")
-        matricula = perfil_valor(fila, "hist_ID_aspirante")
 
         promedio_bach = perfil_valor(
             fila,
@@ -5696,28 +5685,18 @@ def cat_generar_tabla_categorizacion(df_cruzado, df_chaside=None):
             df_chaside
         )
 
-        estudiante_visible = (
-            f"{nombre} · Promedio: {perfil_formato_porcentaje(promedio_bach)} "
-            f"· Escuela: {escuela}"
-        )
-
         registros.append(
             {
                 "Carrera": carrera,
                 "Posición tutorial": clasificacion["Posición tutorial"],
-                "Estudiante": estudiante_visible,
-                "CHASIDE": resultado_chaside["CHASIDE"],
                 "Nombre": nombre,
-                "Matrícula/ID": matricula,
                 "Promedio bachillerato": promedio_bach,
                 "Escuela de procedencia": escuela,
                 "Resultado EVALUATEC": resultado_eval,
+                "Carrera vocacional sugerida CHASIDE": resultado_chaside[
+                    "Carrera vocacional sugerida CHASIDE"
+                ],
                 "Detalle técnico boxplot": clasificacion["Detalle técnico boxplot"],
-                "Carrera elegida CHASIDE": resultado_chaside["Carrera elegida CHASIDE"],
-                "Carrera sugerida CHASIDE": resultado_chaside["Carrera sugerida CHASIDE"],
-                "Área fuerte CHASIDE": resultado_chaside["Área fuerte CHASIDE"],
-                "Semáforo CHASIDE": resultado_chaside["Semáforo CHASIDE"],
-                "Nivel CHASIDE": resultado_chaside["Nivel CHASIDE"],
                 "Q1": clasificacion["Q1"],
                 "Mediana": clasificacion["Mediana"],
                 "Q3": clasificacion["Q3"],
@@ -5739,6 +5718,7 @@ def cat_generar_tabla_categorizacion(df_cruzado, df_chaside=None):
         "Alto riesgo de no acreditación": 5,
         "Requiere realizar o repetir la escala CHASIDE": 6
     }
+
     tabla["Orden posición"] = tabla["Posición tutorial"].map(
         orden_posicion
     ).fillna(99)
@@ -5758,9 +5738,27 @@ def cat_generar_tabla_categorizacion(df_cruzado, df_chaside=None):
 
     return tabla
 
-def cat_generar_excel_coloreado(tabla_carrera, resumen_excel):
+
+def cat_limpiar_nombre_hoja(nombre):
     """
-    Genera Excel con colores por posición tutorial.
+    Limpia el nombre de carrera para usarlo como nombre de pestaña en Excel.
+    """
+
+    nombre = str(nombre)
+    nombre = re.sub(r"[\[\]\:\*\?\/\\]", " ", nombre)
+    nombre = re.sub(r"\s+", " ", nombre).strip()
+
+    if nombre == "":
+        nombre = "Sin carrera"
+
+    return nombre[:31]
+
+
+def cat_generar_excel_todas_carreras_coloreado(tabla, resumen_general):
+    """
+    Genera Excel con:
+    - Hoja resumen general
+    - Una hoja por carrera con detalle de estudiantes
     """
 
     from openpyxl import Workbook
@@ -5768,22 +5766,7 @@ def cat_generar_excel_coloreado(tabla_carrera, resumen_excel):
     from openpyxl.utils import get_column_letter
 
     buffer = io.BytesIO()
-
     wb = Workbook()
-
-    ws = wb.active
-    ws.title = "Listado tutorial"
-
-    columnas = [
-        "Carrera",
-        "Posición tutorial",
-        "Nombre",
-        "Promedio bachillerato",
-        "Escuela de procedencia",
-        "Resultado EVALUATEC",
-        "CHASIDE",
-        "Carrera sugerida CHASIDE"
-    ]
 
     colores_posicion = {
         "Joven talento": "00B050",
@@ -5812,105 +5795,148 @@ def cat_generar_excel_coloreado(tabla_carrera, resumen_excel):
         fill_type="solid"
     )
 
-    for col_idx, columna in enumerate(columnas, start=1):
-        celda = ws.cell(row=1, column=col_idx, value=columna)
-        celda.fill = fill_encabezado
-        celda.font = Font(color="FFFFFF", bold=True)
-        celda.alignment = Alignment(horizontal="center", vertical="center")
-        celda.border = borde
+    # ------------------------------------------------------------
+    # Hoja resumen general
+    # ------------------------------------------------------------
 
-    for fila_idx, (_, fila) in enumerate(tabla_carrera[columnas].iterrows(), start=2):
-        posicion = str(fila["Posición tutorial"])
+    ws_resumen = wb.active
+    ws_resumen.title = "Resumen general"
 
-        color = colores_posicion.get(posicion, "FFFFFF")
-
-        fill_fila = PatternFill(
-            start_color=color,
-            end_color=color,
-            fill_type="solid"
-        )
-
-        color_fuente = "FFFFFF" if posicion in fuente_blanca else "000000"
-
-        for col_idx, columna in enumerate(columnas, start=1):
-            valor = fila[columna]
-
-            celda = ws.cell(
-                row=fila_idx,
-                column=col_idx,
-                value=valor
-            )
-
-            celda.fill = fill_fila
-            celda.font = Font(color=color_fuente)
-            celda.alignment = Alignment(
-                vertical="center",
-                wrap_text=True
-            )
-            celda.border = borde
-
-    for columna_idx, columna in enumerate(columnas, start=1):
-        ancho = 18
-
-        if columna in ["Nombre", "Escuela de procedencia", "CHASIDE", "Carrera sugerida CHASIDE"]:
-            ancho = 35
-
-        if columna == "Posición tutorial":
-            ancho = 42
-
-        ws.column_dimensions[get_column_letter(columna_idx)].width = ancho
-
-    ws.freeze_panes = "A2"
-
-    ws_resumen = wb.create_sheet("Resumen por posición")
-
-    columnas_resumen = [
-        "Posición tutorial",
-        "Estudiantes"
-    ]
+    columnas_resumen = list(resumen_general.columns)
 
     for col_idx, columna in enumerate(columnas_resumen, start=1):
         celda = ws_resumen.cell(row=1, column=col_idx, value=columna)
         celda.fill = fill_encabezado
         celda.font = Font(color="FFFFFF", bold=True)
-        celda.alignment = Alignment(horizontal="center")
+        celda.alignment = Alignment(horizontal="center", vertical="center")
         celda.border = borde
 
-    for fila_idx, (_, fila) in enumerate(resumen_excel.iterrows(), start=2):
-        posicion = str(fila["Posición tutorial"])
-        color = colores_posicion.get(posicion, "FFFFFF")
-
-        fill_fila = PatternFill(
-            start_color=color,
-            end_color=color,
-            fill_type="solid"
-        )
-
-        color_fuente = "FFFFFF" if posicion in fuente_blanca else "000000"
-
+    for fila_idx, (_, fila) in enumerate(resumen_general.iterrows(), start=2):
         for col_idx, columna in enumerate(columnas_resumen, start=1):
             celda = ws_resumen.cell(
                 row=fila_idx,
                 column=col_idx,
                 value=fila[columna]
             )
-            celda.fill = fill_fila
-            celda.font = Font(color=color_fuente)
             celda.border = borde
-            celda.alignment = Alignment(vertical="center")
+            celda.alignment = Alignment(vertical="center", wrap_text=True)
 
-    ws_resumen.column_dimensions["A"].width = 45
-    ws_resumen.column_dimensions["B"].width = 15
+    for col_idx, columna in enumerate(columnas_resumen, start=1):
+        ancho = 18
+
+        if columna == "Carrera":
+            ancho = 38
+
+        ws_resumen.column_dimensions[get_column_letter(col_idx)].width = ancho
+
+    ws_resumen.freeze_panes = "A2"
+
+    # ------------------------------------------------------------
+    # Hojas por carrera
+    # ------------------------------------------------------------
+
+    columnas_detalle = [
+        "Carrera",
+        "Posición tutorial",
+        "Nombre",
+        "Promedio bachillerato",
+        "Escuela de procedencia",
+        "Resultado EVALUATEC",
+        "Carrera vocacional sugerida CHASIDE"
+    ]
+
+    carreras = sorted(
+        tabla["Carrera"]
+        .dropna()
+        .astype(str)
+        .unique()
+    )
+
+    nombres_hojas_usados = set(["Resumen general"])
+
+    for carrera in carreras:
+        df_carrera = tabla[
+            tabla["Carrera"].astype(str) == carrera
+        ][columnas_detalle].copy()
+
+        if df_carrera.empty:
+            continue
+
+        nombre_hoja = cat_limpiar_nombre_hoja(carrera)
+        nombre_base = nombre_hoja
+        contador = 1
+
+        while nombre_hoja in nombres_hojas_usados:
+            sufijo = f" {contador}"
+            nombre_hoja = f"{nombre_base[:31-len(sufijo)]}{sufijo}"
+            contador += 1
+
+        nombres_hojas_usados.add(nombre_hoja)
+
+        ws = wb.create_sheet(nombre_hoja)
+
+        for col_idx, columna in enumerate(columnas_detalle, start=1):
+            celda = ws.cell(row=1, column=col_idx, value=columna)
+            celda.fill = fill_encabezado
+            celda.font = Font(color="FFFFFF", bold=True)
+            celda.alignment = Alignment(horizontal="center", vertical="center")
+            celda.border = borde
+
+        for fila_idx, (_, fila) in enumerate(df_carrera.iterrows(), start=2):
+            posicion = str(fila["Posición tutorial"])
+            color = colores_posicion.get(posicion, "FFFFFF")
+
+            fill_fila = PatternFill(
+                start_color=color,
+                end_color=color,
+                fill_type="solid"
+            )
+
+            color_fuente = "FFFFFF" if posicion in fuente_blanca else "000000"
+
+            for col_idx, columna in enumerate(columnas_detalle, start=1):
+                celda = ws.cell(
+                    row=fila_idx,
+                    column=col_idx,
+                    value=fila[columna]
+                )
+
+                celda.fill = fill_fila
+                celda.font = Font(color=color_fuente)
+                celda.alignment = Alignment(
+                    vertical="center",
+                    wrap_text=True
+                )
+                celda.border = borde
+
+        for col_idx, columna in enumerate(columnas_detalle, start=1):
+            ancho = 18
+
+            if columna in [
+                "Carrera",
+                "Nombre",
+                "Escuela de procedencia",
+                "Carrera vocacional sugerida CHASIDE"
+            ]:
+                ancho = 36
+
+            if columna == "Posición tutorial":
+                ancho = 44
+
+            ws.column_dimensions[get_column_letter(col_idx)].width = ancho
+
+        ws.freeze_panes = "A2"
 
     wb.save(buffer)
     buffer.seek(0)
 
     return buffer.getvalue()
-    
+
+
 def render_categorizacion_estudiantado():
     st.title("📌 Categorización del estudiantado")
     st.caption(
-        "Clasificación tutorial por carrera con base en EVALUATEC, promedio de bachillerato y CHASIDE."
+        "Resumen por carrera y descarga del detalle completo por pestañas en Excel."
     )
 
     requeridos = [
@@ -5962,135 +5988,76 @@ def render_categorizacion_estudiantado():
         pd.DataFrame()
     )
 
-    tabla = cat_generar_tabla_categorizacion(
-        df_cruzado=df_cruzado,
-        df_chaside=df_chaside
-    )
+    with st.spinner("Generando resumen general y archivo Excel..."):
+        tabla = cat_generar_tabla_categorizacion(
+            df_cruzado=df_cruzado,
+            df_chaside=df_chaside
+        )
 
     if tabla.empty:
         st.warning("No se pudo generar la tabla de categorización.")
         st.stop()
 
-    carreras_disponibles = sorted(
-        tabla["Carrera"]
-        .dropna()
-        .astype(str)
-        .unique()
-    )
-
-    carrera_seleccionada = st.selectbox(
-        "Selecciona carrera",
-        options=carreras_disponibles,
-        key="cat_selector_carrera"
-    )
-
-    tabla_carrera = tabla[
-        tabla["Carrera"].astype(str) == str(carrera_seleccionada)
-    ].copy()
-
-    st.markdown(f"## {carrera_seleccionada}")
-
-    resumen = (
-        tabla_carrera
-        .groupby("Posición tutorial")
-        .size()
-        .reset_index(name="Estudiantes")
-    )
-    orden_posicion = {
-        "Joven talento": 1,
-        "Joven con algunas dificultades para acreditar": 2,
-        "Joven con serias dificultades para acreditar": 3,
-        "Bajo desempeño": 4,
-        "Alto riesgo de no acreditación": 5,
-        "Requiere realizar o repetir la escala CHASIDE": 6
-    }
-    
-    resumen["Orden"] = resumen["Posición tutorial"].map(
-        orden_posicion
-    ).fillna(99)
-
-    resumen = resumen.sort_values("Orden")
-
-    st.markdown("### Resumen por posición tutorial")
-
-    columnas_metricas = st.columns(
-        min(5, max(1, len(resumen)))
-    )
-
-    for columna, (_, fila_resumen) in zip(
-        columnas_metricas,
-        resumen.iterrows()
-    ):
-        columna.metric(
-            fila_resumen["Posición tutorial"],
-            int(fila_resumen["Estudiantes"])
-        )
-
-    st.markdown("### Listado tutorial")
-
-    columnas_visibles = [
-        "Carrera",
-        "Posición tutorial",
-        "Nombre",
-        "Promedio bachillerato",
-        "Escuela de procedencia",
-        "Resultado EVALUATEC",
-        "CHASIDE",
-        "Carrera sugerida CHASIDE"
+    categorias = [
+        "Joven talento",
+        "Joven con algunas dificultades para acreditar",
+        "Joven con serias dificultades para acreditar",
+        "Bajo desempeño",
+        "Alto riesgo de no acreditación",
+        "Requiere realizar o repetir la escala CHASIDE"
     ]
-    
-    tabla_visible = tabla_carrera[
-        columnas_visibles
+
+    resumen_general = (
+        tabla
+        .pivot_table(
+            index="Carrera",
+            columns="Posición tutorial",
+            values="Nombre",
+            aggfunc="count",
+            fill_value=0
+        )
+        .reset_index()
+    )
+
+    for categoria in categorias:
+        if categoria not in resumen_general.columns:
+            resumen_general[categoria] = 0
+
+    resumen_general = resumen_general[
+        ["Carrera"] + categorias
     ].copy()
+
+    resumen_general["Total"] = resumen_general[categorias].sum(axis=1)
+
+    resumen_general = resumen_general.sort_values(
+        "Carrera"
+    ).reset_index(drop=True)
+
+    st.markdown("### Resumen general por carrera")
 
     st.dataframe(
-        tabla_visible,
+        resumen_general,
         use_container_width=True,
         hide_index=True
     )
-    columnas_excel = [
-        "Carrera",
-        "Posición tutorial",
-        "Nombre",
-        "Promedio bachillerato",
-        "Escuela de procedencia",
-        "Resultado EVALUATEC",
-        "CHASIDE",
-        "Carrera sugerida CHASIDE"
-    ]
 
-    resumen_excel = resumen[
-        [
-            "Posición tutorial",
-            "Estudiantes"
-        ]
-    ].copy()
-
-    archivo_excel = cat_generar_excel_coloreado(
-        tabla_carrera=tabla_carrera[columnas_excel],
-        resumen_excel=resumen_excel
-    )
-
-    nombre_archivo = (
-        "categorizacion_estudiantado_"
-        + perfil_simplificar_carrera(carrera_seleccionada).replace(" ", "_")
-        + ".xlsx"
+    archivo_excel = cat_generar_excel_todas_carreras_coloreado(
+        tabla=tabla,
+        resumen_general=resumen_general
     )
 
     st.download_button(
-        label="⬇️ Descargar listado de la carrera en Excel",
+        label="⬇️ Descargar Excel completo por carrera",
         data=archivo_excel,
-        file_name=nombre_archivo,
+        file_name="categorizacion_estudiantado_todas_las_carreras.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
-        key=f"descarga_categorizacion_{perfil_simplificar_carrera(carrera_seleccionada)}"
+        key="descarga_categorizacion_todas_las_carreras"
     )
 
-    st.markdown("---")
-
     st.caption(
-        "La posición tutorial se calcula internamente con lógica de boxplot por carrera. "
-        "No se muestran gráficas; solo categorías accionables para seguimiento."
+        "El detalle individual de estudiantes no se muestra en pantalla para evitar lentitud. "
+        "Está incluido en el Excel, con una pestaña por carrera y color por posición tutorial."
     )
 # ============================================================
 # FUNCIONES BASE CHASIDE
