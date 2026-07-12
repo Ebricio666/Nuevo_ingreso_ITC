@@ -3096,6 +3096,11 @@ def chaside_render_reporte_ejecutivo_solo_link():
         use_container_width=True,
         key="download_chaside_procesado_solo_link"
     )
+        file_name="chaside_procesado.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="download_chaside_procesado_solo_link"
+    )
 
 
 def render_modulo_chaside_con_carga():
@@ -6092,7 +6097,8 @@ def render_categorizacion_estudiantado():
         data=archivo_excel,
         file_name=nombre_archivo,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
+        use_container_width=True,
+        key=f"descarga_categorizacion_{perfil_simplificar_carrera(carrera_seleccionada)}"
     )
 
     st.markdown("---")
@@ -6101,24 +6107,6 @@ def render_categorizacion_estudiantado():
         "La posición tutorial se calcula internamente con lógica de boxplot por carrera. "
         "No se muestran gráficas; solo categorías accionables para seguimiento."
     )
-    st.download_button(
-        label="⬇️ Descargar listado de la carrera en Excel",
-        data=archivo_excel,
-        file_name=nombre_archivo,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
-
-    st.markdown("---")
-
-    st.caption(
-        "La posición tutorial se calcula internamente con lógica de boxplot por carrera. "
-        "No se muestran gráficas; solo categorías accionables para seguimiento."
-    )
-        
-# ============================================================
-# FUNCIONES BASE CHASIDE
-# ============================================================        
 # ============================================================
 # FUNCIONES BASE CHASIDE
 # ============================================================
