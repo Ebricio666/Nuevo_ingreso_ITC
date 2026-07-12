@@ -6076,6 +6076,31 @@ def render_categorizacion_estudiantado():
         ]
     ].copy()
 
+    archivo_excel = cat_generar_excel_coloreado(
+        tabla_carrera=tabla_carrera[columnas_excel],
+        resumen_excel=resumen_excel
+    )
+
+    nombre_archivo = (
+        "categorizacion_estudiantado_"
+        + perfil_simplificar_carrera(carrera_seleccionada).replace(" ", "_")
+        + ".xlsx"
+    )
+
+    st.download_button(
+        label="⬇️ Descargar listado de la carrera en Excel",
+        data=archivo_excel,
+        file_name=nombre_archivo,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+
+    st.markdown("---")
+
+    st.caption(
+        "La posición tutorial se calcula internamente con lógica de boxplot por carrera. "
+        "No se muestran gráficas; solo categorías accionables para seguimiento."
+    )
      archivo_excel = cat_generar_excel_coloreado(
         tabla_carrera=tabla_carrera[columnas_excel],
         resumen_excel=resumen_excel
