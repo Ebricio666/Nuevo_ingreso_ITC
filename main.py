@@ -4564,6 +4564,140 @@ def perfil_interpretar_intensidad_chaside(nivel):
 
     return "requiere interpretación complementaria por parte del tutor o responsable académico"
 
+def perfil_limpiar_html_para_pdf(texto):
+    """Convierte HTML básico del dictamen a texto simple para PDF."""
+
+    texto = str(texto)
+
+    texto = re.sub(
+        r"<br\s*/?>",
+        "\n",
+        texto,
+        flags=re.IGNORECASE
+    )
+
+    texto = re.sub(
+        r"<[^>]+>",
+        "",
+        texto
+    )
+
+    texto = (
+        texto.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+    )
+
+    texto = re.sub(r"\n\s*\n", "\n", texto)
+    texto = re.sub(r"[ \t]+", " ", texto)
+
+    return texto.strip()
+
+
+def perfil_generar_pdf_dictamen(nombre, carrera, configuracion, dictamen_tutoria):
+    """Genera PDF del dictamen tutorial."""
+
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.enums import TA_LEFT
+    from reportlab.lib import colors
+    from xml.sax.saxutils import escape
+
+    buffer = io.BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=1.8 * cm,
+        leftMargin=1.8 * cm,
+        topMargin=1.8 * cm,
+        bottomMargin=1.8 * cm
+    )
+
+    styles = getSampleStyleSheet()
+
+    estilo_titulo = ParagraphStyle(
+        "TituloDictamen",
+        parent=styles["Title"],
+        fontSize=18,
+        leading=22,
+        alignment=TA_LEFT,
+        textColor=colors.HexColor("#111111"),
+        spaceAfter=14
+    )
+
+    estilo_info = ParagraphStyle(
+        "InfoDictamen",
+        parent=styles["Normal"],
+        fontSize=10.5,
+        leading=15,
+        textColor=colors.HexColor("#444444"),
+        spaceAfter=16
+    )
+
+    estilo_subtitulo = ParagraphStyle(
+        "SubtituloDictamen",
+        parent=styles["Heading2"],
+        fontSize=12,
+        leading=15,
+        textColor=colors.HexColor("#111111"),
+        spaceBefore=8,
+        spaceAfter=5
+    )
+
+    estilo_punto = ParagraphStyle(
+        "PuntoDictamen",
+        parent=styles["Normal"],
+        fontSize=10.5,
+        leading=16,
+        textColor=colors.HexColor("#111111"),
+        spaceAfter=10
+    )
+
+    elementos = []
+
+    elementos.append(
+        Paragraph("Dictamen tutorial", estilo_titulo)
+    )
+
+    elementos.append(
+        Paragraph(
+            f"<b>Estudiante:</b> {escape(str(nombre))}<br/>"
+            f"<b>Carrera:</b> {escape(str(carrera))}<br/>"
+            f"<b>Clasificación:</b> {escape(str(configuracion['titulo']))}",
+            estilo_info
+        )
+    )
+
+    for numero, (titulo, contenido) in enumerate(
+        dictamen_tutoria,
+        start=1
+    ):
+        contenido_limpio = perfil_limpiar_html_para_pdf(contenido)
+
+        elementos.append(
+            Paragraph(
+                f"{numero}. {escape(str(titulo))}",
+                estilo_subtitulo
+            )
+        )
+
+        elementos.append(
+            Paragraph(
+                escape(contenido_limpio).replace("\n", "<br/>"),
+                estilo_punto
+            )
+        )
+
+        elementos.append(Spacer(1, 6))
+
+    doc.build(elementos)
+
+    buffer.seek(0)
+    return buffer.getvalue()
     
 def render_perfil_individual():
     st.title("👤 Perfil individual del aspirante")
@@ -5007,11 +5141,37 @@ def render_perfil_individual():
             unsafe_allow_html=True
         )
 
-    st.info(
-        "La descarga en PDF se activará después. "
-        "Por ahora el dictamen tutorial ya puede copiarse desde la pantalla."
-    )
+    try:
+        pdf_dictamen = perfil_generar_pdf_dictamen(
+            nombre=nombre,
+            carrera=carrera_historial,
+            configuracion=configuracion,
+            dictamen_tutoria=dictamen_tutoria
+        )
 
+        nombre_archivo_pdf = (
+            "dictamen_tutorial_"
+            + perfil_normalizar_nombre(nombre).lower().replace(" ", "_")
+            + ".pdf"
+        )
+
+        st.download_button(
+            label="⬇️ Descargar dictamen tutorial en PDF",
+            data=pdf_dictamen,
+            file_name=nombre_archivo_pdf,
+            mime="application/pdf",
+            use_container_width=True
+        )
+
+    except ModuleNotFoundError:
+        st.warning(
+            "Para activar la descarga en PDF, agrega reportlab al archivo requirements.txt."
+        )
+
+    except Exception as error:
+        st.warning(
+            f"No fue posible generar el PDF por ahora: {error}"
+        )
 
 # ============================================================
 # FUNCIONES BASE CHASIDE
