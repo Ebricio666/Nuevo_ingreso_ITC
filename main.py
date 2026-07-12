@@ -5144,14 +5144,13 @@ def render_perfil_individual():
                 "<b>Diagnóstico vocacional CHASIDE</b> y procesa las respuestas."
             )
 
-     except Exception as error:
+    except Exception as error:
         dictamen_chaside = (
             "No fue posible integrar automáticamente el resultado CHASIDE. "
             "Se recomienda revisar manualmente la coincidencia por nombre, correo o carrera."
         )
-         
-    tabla_areas = perfil_obtener_areas_individuales(fila)
 
+    tabla_areas = perfil_obtener_areas_individuales(fila)
     resultado_global, tabla_contexto, grupo_referencia = perfil_crear_contexto_academico(
         fila=fila,
         df_evaluatec=df_evaluatec,
