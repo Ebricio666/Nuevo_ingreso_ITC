@@ -5220,56 +5220,71 @@ def chaside_procesar_respuestas(
         .astype(int)
     )
 
-    df[columnas_items] = df_items
+    # Mantener datos base sin meter 98 columnas al dataframe principal
+    df_base = df.drop(columns=columnas_items, errors="ignore").copy()
 
-    df["Desv_Intrapersona"] = df[columnas_items].std(axis=1)
-    umbral = df["Desv_Intrapersona"].quantile(0.10)
-    df["Respondio_Siempre_Igual"] = df["Desv_Intrapersona"] <= umbral
+    nuevas_columnas = pd.DataFrame(index=df_base.index)
+
+    nuevas_columnas["Desv_Intrapersona"] = df_items.std(axis=1)
+
+    umbral = nuevas_columnas["Desv_Intrapersona"].quantile(0.10)
+
+    nuevas_columnas["Respondio_Siempre_Igual"] = (
+        nuevas_columnas["Desv_Intrapersona"] <= umbral
+    )
 
     for area in CHASIDE_AREAS:
-        df[f"INTERES_{area}"] = df[
+        nuevas_columnas[f"INTERES_{area}"] = df_items[
             [
                 chaside_col_item(columnas_items, i)
                 for i in CHASIDE_INTERESES_ITEMS[area]
             ]
         ].sum(axis=1)
 
-        df[f"APTITUD_{area}"] = df[
+        nuevas_columnas[f"APTITUD_{area}"] = df_items[
             [
                 chaside_col_item(columnas_items, i)
                 for i in CHASIDE_APTITUDES_ITEMS[area]
             ]
         ].sum(axis=1)
+
     for area in CHASIDE_AREAS:
-        df[f"PUNTAJE_COMBINADO_{area}"] = (
-            df[f"INTERES_{area}"] * peso_intereses
+        nuevas_columnas[f"PUNTAJE_COMBINADO_{area}"] = (
+            nuevas_columnas[f"INTERES_{area}"] * peso_intereses
             +
-            df[f"APTITUD_{area}"] * peso_aptitudes
+            nuevas_columnas[f"APTITUD_{area}"] * peso_aptitudes
         )
 
-        df[f"TOTAL_{area}"] = (
-            df[f"INTERES_{area}"]
+        nuevas_columnas[f"TOTAL_{area}"] = (
+            nuevas_columnas[f"INTERES_{area}"]
             +
-            df[f"APTITUD_{area}"]
+            nuevas_columnas[f"APTITUD_{area}"]
         )
-
-    # Evita fragmentación del DataFrame y reduce riesgo de caída en Streamlit
-    df = df.copy()
-
-    df["Area_Fuerte_Ponderada"] = df.apply(
-        lambda fila: max(
-            CHASIDE_AREAS,
-            key=lambda area: fila[f"PUNTAJE_COMBINADO_{area}"]
-        ),
-        axis=1
-    )
 
     columnas_score = [
         f"PUNTAJE_COMBINADO_{area}"
         for area in CHASIDE_AREAS
     ]
 
-    df["Score_CHASIDE"] = df[columnas_score].max(axis=1)
+    nuevas_columnas["Area_Fuerte_Ponderada"] = nuevas_columnas[
+        columnas_score
+    ].idxmax(axis=1).str.replace(
+        "PUNTAJE_COMBINADO_",
+        "",
+        regex=False
+    )
+
+    nuevas_columnas["Score_CHASIDE"] = nuevas_columnas[
+        columnas_score
+    ].max(axis=1)
+
+    df = pd.concat(
+        [
+            df_base,
+            nuevas_columnas
+        ],
+        axis=1
+    ).copy()
 
     def evaluar_coincidencia(area_chaside, carrera):
         carrera = str(carrera).strip()
@@ -5363,10 +5378,6 @@ def chaside_procesar_respuestas(
         axis=1
     )
 
-    # ------------------------------------------------------------
-    # Nivel de intensidad vocacional
-    # ------------------------------------------------------------
-
     df["Nivel de intensidad"] = "Sin nivel definido"
 
     for carrera, grupo in df.groupby(CHASIDE_COLUMNA_CARRERA):
@@ -5406,7 +5417,8 @@ def chaside_procesar_respuestas(
                     df.loc[indice, "Nivel de intensidad"] = "Joven promesa"
                 else:
                     df.loc[indice, "Nivel de intensidad"] = "Perfil en transición"
-    return df
+
+    return df.copy()
 
 # ============================================================
 # EJECUCIÓN DE LA APP
