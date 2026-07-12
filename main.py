@@ -4744,6 +4744,124 @@ def perfil_generar_pdf_dictamen(nombre, carrera, configuracion, dictamen_tutoria
 
     buffer.seek(0)
     return buffer.getvalue()
+def perfil_preparar_historial_desde_dataframe(df_historial):
+    """
+    Prepara el Historial ya cargado en session_state para usarlo en Perfil individual.
+    Crea Nombre_match, Carrera_match, Letra_apellido e ID_aspirante.
+    """
+
+    df_historial = df_historial.copy()
+
+    col_apellido_paterno, col_apellido_materno, col_nombre = perfil_encontrar_nombre_historial(
+        df_historial
+    )
+
+    if col_apellido_paterno is None or col_nombre is None:
+        st.error(
+            "En el Historial no pude identificar las columnas de apellido paterno y nombre."
+        )
+        return pd.DataFrame()
+
+    if col_apellido_materno is None:
+        df_historial["Nombre_completo_visible"] = (
+            df_historial[col_apellido_paterno].fillna("").astype(str)
+            + " "
+            + df_historial[col_nombre].fillna("").astype(str)
+        )
+    else:
+        df_historial["Nombre_completo_visible"] = (
+            df_historial[col_apellido_paterno].fillna("").astype(str)
+            + " "
+            + df_historial[col_apellido_materno].fillna("").astype(str)
+            + " "
+            + df_historial[col_nombre].fillna("").astype(str)
+        )
+
+    df_historial["Nombre_completo_visible"] = df_historial[
+        "Nombre_completo_visible"
+    ].apply(perfil_nombre_visible)
+
+    df_historial["Nombre_match"] = df_historial[
+        "Nombre_completo_visible"
+    ].apply(perfil_normalizar_nombre)
+
+    df_historial = df_historial[
+        df_historial["Nombre_match"].notna()
+        &
+        (df_historial["Nombre_match"].str.strip() != "")
+        &
+        (~df_historial["Nombre_match"].str.contains("AULA", na=False))
+    ].copy()
+
+    df_historial["Letra_apellido"] = df_historial[
+        col_apellido_paterno
+    ].fillna("").astype(str).str.strip().str[:1].str.upper()
+
+    df_historial["Carrera_match"] = df_historial[
+        "Carrera"
+    ].apply(perfil_simplificar_carrera)
+
+    columna_id = util_encontrar_columna(
+        df_historial,
+        [
+            "Matrícula/ID",
+            "Matricula/ID",
+            "Matrícula",
+            "Matricula",
+            "ID"
+        ]
+    )
+
+    if columna_id is not None:
+        df_historial["ID_aspirante"] = df_historial[columna_id]
+    else:
+        df_historial["ID_aspirante"] = "Sin dato"
+
+    columna_sexo = util_encontrar_columna(
+        df_historial,
+        ["Género", "Genero", "Sexo"]
+    )
+
+    if columna_sexo is not None:
+        df_historial["Sexo_normalizado"] = df_historial[
+            columna_sexo
+        ].apply(hist_normalizar_sexo)
+    else:
+        df_historial["Sexo_normalizado"] = "Sin especificar"
+
+    df_historial["Rango_promedio"] = df_historial[
+        "Promedio_normalizado_100"
+    ].apply(hist_clasificar_rango_promedio)
+
+    columna_escuela = util_encontrar_columna(
+        df_historial,
+        [
+            "Escuela de Procedencia",
+            "Escuela Procedencia",
+            "Procedencia",
+            "Escuela"
+        ]
+    )
+
+    if columna_escuela is not None:
+        df_historial["Bachillerato_procedencia_original"] = df_historial[
+            columna_escuela
+        ].fillna("Sin dato").astype(str)
+
+        df_historial["Bachillerato_procedencia"] = df_historial[
+            columna_escuela
+        ].apply(hist_normalizar_escuela_procedencia)
+
+        df_historial["Estado_procedencia"] = df_historial[
+            columna_escuela
+        ].apply(hist_clasificar_estado_procedencia)
+
+    else:
+        df_historial["Bachillerato_procedencia_original"] = "Sin dato"
+        df_historial["Bachillerato_procedencia"] = "Sin dato"
+        df_historial["Estado_procedencia"] = "Sin dato"
+
+    return df_historial
     
 def render_perfil_individual():
     st.title("👤 Perfil individual del aspirante")
@@ -4760,12 +4878,21 @@ def render_perfil_individual():
         and "df_historial_global" in st.session_state
     ):
         datos_eval_global = st.session_state["datos_eval_global"]
-        df_historial = st.session_state["df_historial_global"].copy()
+
+        df_historial = perfil_preparar_historial_desde_dataframe(
+            st.session_state["df_historial_global"]
+        )
+
+        if df_historial.empty:
+            st.error(
+                "El Historial está cargado, pero no se pudo preparar para Perfil individual."
+            )
+            st.stop()
+
         df_bitacora = st.session_state.get(
             "df_bitacora_historial",
             pd.DataFrame()
         )
-
         bases_eval = []
 
         for bloque, info_bloque in datos_eval_global.items():
