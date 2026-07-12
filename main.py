@@ -1338,21 +1338,69 @@ def render_evaluatec():
     st.title("📘 Resultados EVALUATEC 2026")
     st.caption("Perfil académico por carrera.")
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Carga EVALUATEC")
+    if "datos_eval_global" in st.session_state:
+        datos_por_bloque = st.session_state["datos_eval_global"]
 
-    archivos_subidos = st.sidebar.file_uploader(
-        "Carga los 3 archivos oficiales EVALUATEC",
-        type=["csv"],
-        accept_multiple_files=True,
-        key="eval_archivos"
-    )
-
-    if not archivos_subidos:
-        st.info(
-            "Carga los tres archivos CSV: Administración, Arquitectura e Ingeniería."
+        st.success(
+            "EVALUATEC cargado desde el módulo global de carga de archivos."
         )
-        st.stop()
+
+    else:
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Carga EVALUATEC")
+
+        archivos_subidos = st.sidebar.file_uploader(
+            "Carga los 3 archivos oficiales EVALUATEC",
+            type=["csv"],
+            accept_multiple_files=True,
+            key="eval_archivos"
+        )
+
+        if not archivos_subidos:
+            st.info(
+                "Carga los tres archivos CSV en este módulo o primero usa el módulo "
+                "📂 Carga de archivos."
+            )
+            st.stop()
+
+        if len(archivos_subidos) != 3:
+            st.warning(
+                f"Actualmente cargaste {len(archivos_subidos)} archivo(s). "
+                "Deben cargarse exactamente 3."
+            )
+            st.stop()
+
+        datos_por_bloque = {}
+        errores = []
+
+        for archivo in archivos_subidos:
+            try:
+                df_archivo, areas_detectadas = eval_procesar_archivo(
+                    archivo
+                )
+
+                bloque = df_archivo["Bloque"].iloc[0]
+
+                datos_por_bloque[bloque] = {
+                    "df": df_archivo,
+                    "areas": areas_detectadas,
+                    "archivo": archivo.name
+                }
+
+            except Exception as error:
+                errores.append(
+                    f"{archivo.name}: {error}"
+                )
+
+        if errores:
+            for error in errores:
+                st.error(error)
+
+        if not datos_por_bloque:
+            st.stop()
+
+        st.session_state["datos_eval_global"] = datos_por_bloque
+
 
     if len(archivos_subidos) != 3:
         st.warning(
@@ -2582,19 +2630,50 @@ def render_historial():
         "Análisis general y análisis por carrera de aspirantes de nuevo ingreso."
     )
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Carga Historial")
+    if "df_historial_global" in st.session_state:
+        df_general = st.session_state["df_historial_global"].copy()
+        df_bitacora = st.session_state.get(
+            "df_bitacora_historial",
+            pd.DataFrame()
+        )
 
-    archivo_subido = st.sidebar.file_uploader(
-        "Carga el archivo Excel de aspirantes",
-        type=["xlsx", "xls"],
-        key="hist_archivo"
-    )
+        st.success(
+            "Historial cargado desde el módulo global de carga de archivos."
+        )
 
-    if archivo_subido is None:
-        st.info("Carga un archivo Excel para iniciar el análisis.")
-        st.stop()
+    else:
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Carga Historial")
 
+        archivo_subido = st.sidebar.file_uploader(
+            "Carga el archivo Excel de aspirantes",
+            type=["xlsx", "xls"],
+            key="hist_archivo"
+        )
+
+        if archivo_subido is None:
+            st.info(
+                "Carga un archivo Excel en este módulo o primero usa el módulo "
+                "📂 Carga de archivos."
+            )
+            st.stop()
+
+        contenido_archivo = archivo_subido.getvalue()
+
+        with st.spinner("Leyendo e integrando hojas del archivo..."):
+            df_general, df_bitacora = hist_procesar_archivo_excel(
+                contenido_archivo
+            )
+
+        if df_general.empty:
+            st.error("No se pudieron identificar registros de aspirantes.")
+            st.dataframe(df_bitacora, use_container_width=True)
+            st.stop()
+
+        st.session_state["df_historial_global"] = df_general.copy()
+        st.session_state["df_bitacora_historial"] = df_bitacora.copy()
+
+    
     contenido_archivo = archivo_subido.getvalue()
 
     with st.spinner("Leyendo e integrando hojas del archivo..."):
@@ -4705,58 +4784,120 @@ def render_perfil_individual():
         "Cruce entre Historial de Aspirantes y EVALUATEC usando nombre como llave principal."
     )
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Carga Perfil Individual")
+    # ------------------------------------------------------------
+    # Carga de datos desde sesión global o carga local
+    # ------------------------------------------------------------
 
-    archivos_eval = st.sidebar.file_uploader(
-        "Carga los 3 CSV de EVALUATEC",
-        type=["csv"],
-        accept_multiple_files=True,
-        key="perfil_eval_archivos"
-    )
-
-    archivo_historial = st.sidebar.file_uploader(
-        "Carga el Excel de Historial de Aspirantes",
-        type=["xlsx", "xls"],
-        key="perfil_historial_archivo"
-    )
-
-    if not archivos_eval or archivo_historial is None:
-        st.info(
-            "Para construir el perfil individual carga los archivos de EVALUATEC "
-            "y el Excel de Historial de Aspirantes."
-        )
-        st.stop()
-
-    if len(archivos_eval) != 3:
-        st.warning(
-            f"Cargaste {len(archivos_eval)} archivo(s) de EVALUATEC. "
-            "Se requieren exactamente 3."
-        )
-        st.stop()
-
-    with st.spinner("Procesando y cruzando bases de datos..."):
-        df_evaluatec, errores_eval = perfil_preparar_evaluatec(
-            archivos_eval
+    if (
+        "datos_eval_global" in st.session_state
+        and "df_historial_global" in st.session_state
+    ):
+        datos_eval_global = st.session_state["datos_eval_global"]
+        df_historial = st.session_state["df_historial_global"].copy()
+        df_bitacora = st.session_state.get(
+            "df_bitacora_historial",
+            pd.DataFrame()
         )
 
-        df_historial, df_bitacora = perfil_preparar_historial(
-            archivo_historial.getvalue()
+        bases_eval = []
+
+        for bloque, info_bloque in datos_eval_global.items():
+            df_temp = info_bloque["df"].copy()
+
+            columna_nombre = perfil_encontrar_nombre_evaluatec(df_temp)
+
+            if columna_nombre is not None:
+                df_temp["Nombre_completo_visible"] = df_temp[
+                    columna_nombre
+                ].apply(perfil_nombre_visible)
+
+                df_temp["Nombre_match"] = df_temp[
+                    columna_nombre
+                ].apply(perfil_normalizar_nombre)
+
+                df_temp["Carrera_match"] = df_temp[
+                    "Carrera_normalizada"
+                ].apply(perfil_simplificar_carrera)
+
+                df_temp["Areas_detectadas_lista"] = ",".join(
+                    info_bloque["areas"].keys()
+                )
+
+                bases_eval.append(df_temp)
+
+        if bases_eval:
+            df_evaluatec = pd.concat(
+                bases_eval,
+                ignore_index=True,
+                sort=False
+            )
+        else:
+            st.error(
+                "EVALUATEC está cargado, pero no se pudo preparar para Perfil individual."
+            )
+            st.stop()
+
+        st.success(
+            "Perfil individual construido con archivos cargados previamente en 📂 Carga de archivos."
         )
 
-    if errores_eval:
-        for error in errores_eval:
-            st.warning(error)
+    else:
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Carga Perfil Individual")
 
-    if df_evaluatec.empty:
-        st.error("No se pudo procesar la base de EVALUATEC.")
-        st.stop()
+        archivos_eval = st.sidebar.file_uploader(
+            "Carga los 3 CSV de EVALUATEC",
+            type=["csv"],
+            accept_multiple_files=True,
+            key="perfil_eval_archivos"
+        )
 
-    if df_historial.empty:
-        st.error("No se pudo procesar el Historial de Aspirantes.")
-        st.dataframe(df_bitacora, use_container_width=True)
-        st.stop()
+        archivo_historial = st.sidebar.file_uploader(
+            "Carga el Excel de Historial de Aspirantes",
+            type=["xlsx", "xls"],
+            key="perfil_historial_archivo"
+        )
 
+        if not archivos_eval or archivo_historial is None:
+            st.info(
+                "Para construir el perfil individual carga los archivos de EVALUATEC "
+                "y el Excel de Historial de Aspirantes, o primero usa el módulo "
+                "📂 Carga de archivos."
+            )
+            st.stop()
+
+        if len(archivos_eval) != 3:
+            st.warning(
+                f"Cargaste {len(archivos_eval)} archivo(s) de EVALUATEC. "
+                "Se requieren exactamente 3."
+            )
+            st.stop()
+
+        with st.spinner("Procesando y cruzando bases de datos..."):
+            df_evaluatec, errores_eval = perfil_preparar_evaluatec(
+                archivos_eval
+            )
+
+            df_historial, df_bitacora = perfil_preparar_historial(
+                archivo_historial.getvalue()
+            )
+
+        if errores_eval:
+            for error in errores_eval:
+                st.warning(error)
+
+        if df_evaluatec.empty:
+            st.error("No se pudo procesar la base de EVALUATEC.")
+            st.stop()
+
+        if df_historial.empty:
+            st.error("No se pudo procesar el Historial de Aspirantes.")
+            st.dataframe(df_bitacora, use_container_width=True)
+            st.stop()
+
+        st.session_state["df_historial_global"] = df_historial.copy()
+        st.session_state["df_bitacora_historial"] = df_bitacora.copy()
+        
     df_cruzado = perfil_crear_base_cruzada(
         df_historial=df_historial,
         df_evaluatec=df_evaluatec
