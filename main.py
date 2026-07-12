@@ -395,7 +395,8 @@ def cargar_datos_globales():
 
             st.session_state["df_chaside_raw_global"] = df_chaside_raw
             st.session_state["df_chaside_global"] = df_chaside
-
+            
+    st.session_state["df_chaside_global"] = df_chaside.copy()
             total_chaside = int(df_chaside.shape[0])
 
             st.success(
@@ -4729,10 +4730,198 @@ def render_perfil_individual():
 
     estado = perfil_valor(fila, "hist_Estado_procedencia")
     matricula = perfil_valor(fila, "hist_ID_aspirante")
-        # ------------------------------------------------------------
-    # CHASIDE temporalmente desactivado para estabilizar la app
+    # ------------------------------------------------------------
+    # CHASIDE para dictamen tutorial
     # ------------------------------------------------------------
 
+    dictamen_chaside = (
+        "No se encontró registro CHASIDE para esta persona aspirante. "
+        "Se recomienda solicitarle responder la escala para complementar el dictamen tutorial."
+    )
+
+    try:
+        if "df_chaside_global" in st.session_state:
+            df_chaside_perfil = st.session_state["df_chaside_global"].copy()
+
+            nombre_actual_norm = perfil_normalizar_nombre(nombre)
+            carrera_actual_norm = perfil_simplificar_carrera(carrera_historial)
+
+            correos_aspirante = perfil_extraer_correos_fila(fila)
+
+            df_chaside_match = df_chaside_perfil.copy()
+
+            df_chaside_match["Nombre_match"] = df_chaside_match[
+                CHASIDE_COLUMNA_NOMBRE
+            ].apply(perfil_normalizar_nombre)
+
+            df_chaside_match["Carrera_match"] = df_chaside_match[
+                CHASIDE_COLUMNA_CARRERA
+            ].apply(perfil_simplificar_carrera)
+
+            df_chaside_match["Correo_CHASIDE_1"] = ""
+
+            if CHASIDE_COLUMNA_EMAIL_1 in df_chaside_match.columns:
+                df_chaside_match["Correo_CHASIDE_1"] = df_chaside_match[
+                    CHASIDE_COLUMNA_EMAIL_1
+                ].apply(perfil_normalizar_correo)
+
+            df_chaside_match["Correo_CHASIDE_2"] = ""
+
+            if CHASIDE_COLUMNA_EMAIL_2 in df_chaside_match.columns:
+                df_chaside_match["Correo_CHASIDE_2"] = df_chaside_match[
+                    CHASIDE_COLUMNA_EMAIL_2
+                ].apply(perfil_normalizar_correo)
+
+            df_chaside_match["Coincide_correo"] = df_chaside_match.apply(
+                lambda fila_ch: (
+                    fila_ch["Correo_CHASIDE_1"] in correos_aspirante
+                    or fila_ch["Correo_CHASIDE_2"] in correos_aspirante
+                ),
+                axis=1
+            )
+
+            df_chaside_match["Coincide_carrera"] = (
+                df_chaside_match["Carrera_match"] == carrera_actual_norm
+            )
+
+            df_chaside_match["Score_nombre"] = df_chaside_match[
+                CHASIDE_COLUMNA_NOMBRE
+            ].apply(
+                lambda valor: perfil_score_nombre_tokens(
+                    valor,
+                    nombre
+                )
+            )
+
+            df_chaside_match = df_chaside_match.sort_values(
+                [
+                    "Coincide_correo",
+                    "Coincide_carrera",
+                    "Score_nombre"
+                ],
+                ascending=[
+                    False,
+                    False,
+                    False
+                ]
+            )
+
+            if not df_chaside_match.empty:
+                mejor_match = df_chaside_match.iloc[0]
+
+                if (
+                    mejor_match["Coincide_correo"]
+                    or (
+                        mejor_match["Coincide_carrera"]
+                        and mejor_match["Score_nombre"] >= 0.45
+                    )
+                    or mejor_match["Score_nombre"] >= 0.70
+                ):
+                    fila_chaside = mejor_match
+
+                    semaforo_chaside = fila_chaside["Semáforo vocacional"]
+                    diagnostico_chaside = fila_chaside["Diagnóstico vocacional"]
+                    nivel_chaside = fila_chaside["Nivel de intensidad"]
+                    carrera_mejor_chaside = fila_chaside["Carrera_Mejor_Perfilada"]
+                    carrera_respondida_chaside = fila_chaside[CHASIDE_COLUMNA_CARRERA]
+                    area_fuerte_chaside = fila_chaside["Area_Fuerte_Ponderada"]
+
+                    descripcion_area = CHASIDE_AREAS_LONG.get(
+                        area_fuerte_chaside,
+                        "Sin descripción"
+                    )
+
+                    recomendacion_docente = chaside_recomendacion_ejecutiva_solo_link(
+                        fila_chaside
+                    )
+
+                    interpretacion_intensidad = perfil_interpretar_intensidad_chaside(
+                        nivel_chaside
+                    )
+
+                    if semaforo_chaside == "Verde":
+                        semaforo_html = perfil_texto_chaside_coloreado(
+                            f"{semaforo_chaside} ({diagnostico_chaside})",
+                            "positivo"
+                        )
+
+                    elif semaforo_chaside in ["Rojo", "Respondió siempre igual"]:
+                        semaforo_html = perfil_texto_chaside_coloreado(
+                            f"{semaforo_chaside} ({diagnostico_chaside})",
+                            "negativo"
+                        )
+
+                    else:
+                        semaforo_html = (
+                            f"<b style='color:#F9A825;'>"
+                            f"{semaforo_chaside} ({diagnostico_chaside})"
+                            f"</b>"
+                        )
+
+                    if diagnostico_chaside == "Perfil adecuado":
+                        texto_adecuacion = (
+                            "lo que indica "
+                            + perfil_texto_chaside_coloreado(
+                                "un perfil vocacional adecuado para la carrera elegida",
+                                "positivo"
+                            )
+                        )
+
+                        texto_carrera_mejor = (
+                            f"La carrera respondida en CHASIDE fue "
+                            f"<b>{carrera_respondida_chaside}</b>, y el resultado mantiene "
+                            + perfil_texto_chaside_coloreado(
+                                "correspondencia con dicha elección",
+                                "positivo"
+                            )
+                            + "."
+                        )
+
+                    else:
+                        texto_adecuacion = (
+                            "lo que indica "
+                            + perfil_texto_chaside_coloreado(
+                                "un perfil vocacional no completamente adecuado para la carrera elegida",
+                                "negativo"
+                            )
+                        )
+
+                        texto_carrera_mejor = (
+                            f"La carrera respondida en CHASIDE fue "
+                            f"<b>{carrera_respondida_chaside}</b>; sin embargo, "
+                            f"el perfil sugiere mayor afinidad hacia "
+                            + perfil_texto_chaside_coloreado(
+                                carrera_mejor_chaside,
+                                "positivo"
+                            )
+                            + "."
+                        )
+
+                    dictamen_chaside = (
+                        f"La persona aspirante sí contestó la escala CHASIDE. "
+                        f"El semáforo vocacional fue {semaforo_html}, {texto_adecuacion}. "
+                        f"El área fuerte identificada fue "
+                        f"<b>{area_fuerte_chaside} · {descripcion_area}</b>. "
+                        f"{texto_carrera_mejor} "
+                        f"El nivel de intensidad se detectó como "
+                        f"<b>{nivel_chaside}</b>, lo cual {interpretacion_intensidad}. "
+                        f"<br><br>"
+                        f"<b>Recomendación docente:</b> {recomendacion_docente}"
+                    )
+
+        else:
+            dictamen_chaside = (
+                "El módulo CHASIDE aún no ha sido procesado en esta sesión. "
+                "Para integrar el resultado vocacional, primero entra al módulo "
+                "<b>Diagnóstico vocacional CHASIDE</b> y procesa las respuestas."
+            )
+
+    except Exception as error:
+        dictamen_chaside = (
+            "No fue posible integrar automáticamente el resultado CHASIDE. "
+            "Se recomienda revisar manualmente la coincidencia por nombre, correo o carrera."
+        )
+    
     dictamen_chaside = (
         "El resultado CHASIDE se integrará posteriormente. "
         "Por ahora, el dictamen tutorial se genera con Historial de Aspirantes "
