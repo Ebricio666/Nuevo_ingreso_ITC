@@ -2589,50 +2589,15 @@ def hist_mostrar_sunburst_otros_bachilleratos(
 
     st.plotly_chart(fig, use_container_width=True)
 
-
 def render_historial():
     st.title("🎓 Historial de Aspirantes")
     st.caption(
         "Análisis general y análisis por carrera de aspirantes de nuevo ingreso."
     )
 
-    if "df_historial_global" in st.session_state:
-        df_general = st.session_state["df_historial_global"].copy()
-        df_bitacora = st.session_state.get(
-            "df_bitacora_historial",
-            pd.DataFrame()
-        )
-
-        st.success(
-            "Historial cargado desde el módulo global de carga de archivos."
-        )
-
-    else:
-        st.sidebar.markdown("---")
-        st.sidebar.subheader("Carga Historial")
-
-        archivo_subido = st.sidebar.file_uploader(
-            "Carga el archivo Excel de aspirantes",
-            type=["xlsx", "xls"],
-            key="hist_archivo"
-        )
-
-        if archivo_subido is None:
-            st.info(
-                "Carga un archivo Excel en este módulo o primero usa el módulo "
-                "📂 Carga de archivos."
-            )
-            st.stop()
-
-        st.session_state["df_historial_global"] = df_general.copy()
-        st.session_state["df_bitacora_historial"] = df_bitacora.copy()
-
-    
-def render_historial():
-    st.title("🎓 Historial de Aspirantes")
-    st.caption(
-        "Análisis general y análisis por carrera de aspirantes de nuevo ingreso."
-    )
+    # ------------------------------------------------------------
+    # Carga desde sesión global o carga local
+    # ------------------------------------------------------------
 
     if "df_historial_global" in st.session_state:
         df_general = st.session_state["df_historial_global"].copy()
@@ -2677,24 +2642,26 @@ def render_historial():
         st.session_state["df_historial_global"] = df_general.copy()
         st.session_state["df_bitacora_historial"] = df_bitacora.copy()
 
+    # ------------------------------------------------------------
+    # Preparación de variables complementarias
+    # ------------------------------------------------------------
+
     columna_sexo = util_encontrar_columna(
-        df_general,
-        ["Género", "Genero", "Sexo"]
-    )
         df_general,
         ["Género", "Genero", "Sexo"]
     )
 
     if columna_sexo is not None:
-        df_general["Sexo_normalizado"] = df_general[columna_sexo].apply(
-            hist_normalizar_sexo
-        )
+        df_general["Sexo_normalizado"] = df_general[
+            columna_sexo
+        ].apply(hist_normalizar_sexo)
     else:
         df_general["Sexo_normalizado"] = "Sin especificar"
 
     df_general["Rango_promedio"] = df_general[
         "Promedio_normalizado_100"
     ].apply(hist_clasificar_rango_promedio)
+
     columna_escuela = util_encontrar_columna(
         df_general,
         [
@@ -2704,9 +2671,8 @@ def render_historial():
             "Escuela"
         ]
     )
-    
-    if columna_escuela is not None:
 
+    if columna_escuela is not None:
         df_general["Bachillerato_procedencia_original"] = df_general[
             columna_escuela
         ].fillna("Sin dato").astype(str)
@@ -2718,12 +2684,15 @@ def render_historial():
         df_general["Estado_procedencia"] = df_general[
             columna_escuela
         ].apply(hist_clasificar_estado_procedencia)
+
     else:
         df_general["Bachillerato_procedencia_original"] = "Sin dato"
         df_general["Bachillerato_procedencia"] = "Sin dato"
         df_general["Estado_procedencia"] = "Sin dato"
 
-    mapa_colores_carreras = hist_crear_mapa_colores_carreras(df_general)
+    mapa_colores_carreras = hist_crear_mapa_colores_carreras(
+        df_general
+    )
 
     seccion_activa = st.radio(
         "Navegación",
@@ -2735,6 +2704,10 @@ def render_historial():
         label_visibility="collapsed",
         key="hist_navegacion_principal"
     )
+
+    # ------------------------------------------------------------
+    # Análisis general
+    # ------------------------------------------------------------
 
     if seccion_activa == "📊 Análisis general":
 
@@ -2760,9 +2733,7 @@ def render_historial():
         st.markdown("### Estado de procedencia")
         hist_mostrar_concentrado_estados(df_general)
 
-        st.markdown(
-            "## Distribución de calificaciones por bachillerato"
-        )
+        st.markdown("## Distribución de calificaciones por bachillerato")
         hist_mostrar_grafica_semaforo_bachillerato(df_general)
 
         st.markdown("## Origen académico y carrera elegida")
@@ -2781,6 +2752,10 @@ def render_historial():
                 mapa_colores_carreras,
                 top_n=10
             )
+
+    # ------------------------------------------------------------
+    # Análisis por carrera
+    # ------------------------------------------------------------
 
     elif seccion_activa == "🎓 Análisis por carrera":
 
@@ -2832,11 +2807,9 @@ def render_historial():
         st.markdown("### Estado de procedencia")
         hist_mostrar_concentrado_estados(df_carrera)
 
-        st.markdown(
-            "## Distribución de calificaciones por bachillerato"
-        )
+        st.markdown("## Distribución de calificaciones por bachillerato")
         hist_mostrar_grafica_semaforo_bachillerato(df_carrera)
-
+        
 def chaside_color_semaforo(semaforo):
     """Define color visual del diagnóstico CHASIDE."""
 
