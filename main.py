@@ -5415,7 +5415,7 @@ def cat_clasificar_posicion_tutorial(valor, serie_referencia):
 
     if pd.isna(valor) or serie.empty or len(serie) < 5:
         return {
-            "Posición tutorial": "Sin información suficiente",
+            "Posición tutorial": "Requiere realizar o repetir la escala CHASIDE",
             "Detalle técnico boxplot": "Sin referencia suficiente",
             "Q1": np.nan,
             "Mediana": np.nan,
@@ -6101,17 +6101,6 @@ def render_categorizacion_estudiantado():
         "La posición tutorial se calcula internamente con lógica de boxplot por carrera. "
         "No se muestran gráficas; solo categorías accionables para seguimiento."
     )
-     archivo_excel = cat_generar_excel_coloreado(
-        tabla_carrera=tabla_carrera[columnas_excel],
-        resumen_excel=resumen_excel
-    )
-
-    nombre_archivo = (
-        "categorizacion_estudiantado_"
-        + perfil_simplificar_carrera(carrera_seleccionada).replace(" ", "_")
-        + ".xlsx"
-    )
-
     st.download_button(
         label="⬇️ Descargar listado de la carrera en Excel",
         data=archivo_excel,
@@ -6127,6 +6116,9 @@ def render_categorizacion_estudiantado():
         "No se muestran gráficas; solo categorías accionables para seguimiento."
     )
         
+# ============================================================
+# FUNCIONES BASE CHASIDE
+# ============================================================        
 # ============================================================
 # FUNCIONES BASE CHASIDE
 # ============================================================
